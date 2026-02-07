@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Editing Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>Projects</h1>
+        <button id="new-session" title="New Project">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
+            stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          New
+        </button>
+      </div>
+      <ul id="session-list" class="session-list"></ul>
+    </aside>
+
+    <main class="main">
+      <header class="main-header">
+        <div>
+          <h2 id="session-title">Select a session</h2>
+          <p id="session-meta">Select a project from the sidebar to start editing.</p>
+        </div>
+      </header>
+
+      <section class="content">
+        <div class="chat" id="chat"></div>
+
+        <div class="panel">
+          <h3>
+            <span>Assets</span>
+            <div class="assets-controls">
+              <input type="file" id="asset-upload" multiple />
+              <label for="asset-upload" class="file-upload-label" title="Upload Files">
+                Upload
+              </label>
+              <button id="refresh-assets" title="Refresh">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M23 4v6h-6"></path>
+                  <path d="M1 20v-6h6"></path>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+              </button>
+            </div>
+          </h3>
+          <div class="assets-list" id="assets-list"></div>
+        </div>
+      </section>
+
+      <footer class="composer">
+        <div class="composer-container">
+          <textarea id="message"
+            placeholder="Describe the video you want to create (e.g. 'Create a montage from these clips with a moody intro...')"
+            rows="1"></textarea>
+          <button id="send" title="Send Message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>

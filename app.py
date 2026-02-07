@@ -1,0 +1,191 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+
+from agent import run_agent
+from tools import PROJECTS_ROOT
+
+BASE_DIR = Path(__file__).resolve().parent
+WEB_DIR = BASE_DIR / "web"
+TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
+
+app = FastAPI(title="Video Editing Agent")
+app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
+
+
+def _sanitize_session(name: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "-", name.strip())
+    return safe.strip("-") or "session"
+
+
+def _session_dir(session_id: str) -> Path:
+    return (PROJECTS_ROOT / session_id).resolve()
+
+
+def _assets_dir(session_id: str) -> Path:
+    return _session_dir(session_id) / "assets"
+
+
+def _ensure_session(session_id: str) -> Path:
+    session_dir = _session_dir(session_id)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    _assets_dir(session_id).mkdir(parents=True, exist_ok=True)
+    return session_dir
+
+
+def _list_sessions() -> List[str]:
+    if not PROJECTS_ROOT.exists():
+        return []
+    sessions = []
+    for entry in PROJECTS_ROOT.iterdir():
+        if entry.is_dir() and not entry.name.startswith("."):
+            sessions.append(entry.name)
+    return sorted(sessions)
+
+
+def _memory_path(session_id: str) -> Path:
+    return _session_dir(session_id) / ".memory.jsonl"
+
+
+def _read_messages(session_id: str) -> List[Dict[str, Any]]:
+    path = _memory_path(session_id)
+    if not path.exists():
+        return []
+    items = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if not line.strip():
+                continue
+            items.append(json.loads(line))
+    except Exception:
+        return []
+
+    messages: List[Dict[str, Any]] = []
+    for msg in items:
+        role = msg.get("type") or msg.get("role") or "ai"
+        payload = msg.get("data", {}) if isinstance(msg, dict) else {}
+        content = payload.get("content", "")
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    text_parts.append(part.get("text", ""))
+            text = "\n".join([p for p in text_parts if p])
+        else:
+            text = str(content)
+        messages.append({"role": role, "text": text})
+    return messages
+
+
+def _list_assets(session_id: str) -> List[Dict[str, Any]]:
+    assets = _assets_dir(session_id)
+    if not assets.exists():
+        return []
+    results: List[Dict[str, Any]] = []
+    for path in assets.rglob("*"):
+        if path.is_file():
+            results.append({
+                "name": str(path.relative_to(assets)),
+                "size": path.stat().st_size,
+            })
+    return sorted(results, key=lambda item: item["name"])
+
+
+def _save_upload(session_id: str, upload: UploadFile) -> Path:
+    _ensure_session(session_id)
+    assets = _assets_dir(session_id)
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", upload.filename or "upload")
+    target = assets / f"{timestamp}_{safe_name}"
+    with target.open("wb") as handle:
+        handle.write(upload.file.read())
+    return target
+
+
+@app.get("/", response_class=HTMLResponse)
+def index(request: Request) -> HTMLResponse:
+    return TEMPLATES.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/api/sessions")
+def get_sessions() -> JSONResponse:
+    return JSONResponse({"sessions": _list_sessions()})
+
+
+@app.post("/api/sessions")
+def create_session(name: Optional[str] = Form(None)) -> JSONResponse:
+    session_id = _sanitize_session(name or "")
+    if not session_id:
+        session_id = "session"
+    if session_id in _list_sessions():
+        session_id = f"{session_id}-{datetime.utcnow().strftime('%H%M%S')}"
+    _ensure_session(session_id)
+    return JSONResponse({"session": session_id})
+
+
+@app.get("/api/sessions/{session_id}/messages")
+def get_messages(session_id: str) -> JSONResponse:
+    return JSONResponse({"messages": _read_messages(session_id)})
+
+
+@app.get("/api/sessions/{session_id}/assets")
+def get_assets(session_id: str) -> JSONResponse:
+    return JSONResponse({"assets": _list_assets(session_id)})
+
+
+@app.post("/api/sessions/{session_id}/message")
+def send_message(
+    session_id: str,
+    message: str = Form(...),
+    asset_names: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default=[]),
+) -> JSONResponse:
+    _ensure_session(session_id)
+
+    selected_assets: List[str] = []
+    if asset_names:
+        try:
+            parsed = json.loads(asset_names)
+            if isinstance(parsed, list):
+                selected_assets.extend(parsed)
+        except json.JSONDecodeError:
+            pass
+
+    saved_assets: List[str] = []
+    for upload in files:
+        saved = _save_upload(session_id, upload)
+        saved_assets.append(str(saved))
+
+    assets_dir = _assets_dir(session_id)
+    for asset in selected_assets:
+        target = (assets_dir / asset).resolve()
+        if str(target).lower().startswith(str(assets_dir).lower()) and target.exists():
+            saved_assets.append(str(target))
+
+    response_text = run_agent(
+        video_source="none",
+        request=message,
+        project=session_id,
+        model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
+        max_steps=int(os.getenv("AGENT_MAX_STEPS", "100")),
+        assets=saved_assets or None,
+    )
+
+    return JSONResponse({"reply": response_text})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    # Use dirname as cwd to ensure relative imports/paths work
+    # os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
