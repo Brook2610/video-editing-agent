@@ -1,84 +1,119 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Editing Agent</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Editing Agent</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h1>Projects</h1>
-        <button id="new-session" title="New Project">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"
-            stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          New
-        </button>
-      </div>
-      <ul id="session-list" class="session-list"></ul>
-    </aside>
-
-    <main class="main">
-      <header class="main-header">
-        <div>
-          <h2 id="session-title">Select a session</h2>
-          <p id="session-meta">Select a project from the sidebar to start editing.</p>
-        </div>
-      </header>
-
-      <section class="content">
-        <div class="chat" id="chat"></div>
-
-        <div class="panel">
-          <h3>
-            <span>Assets</span>
-            <div class="assets-controls">
-              <input type="file" id="asset-upload" multiple />
-              <label for="asset-upload" class="file-upload-label" title="Upload Files">
-                Upload
-              </label>
-              <button id="refresh-assets" title="Refresh">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M23 4v6h-6"></path>
-                  <path d="M1 20v-6h6"></path>
-                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                </svg>
-              </button>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar glass-panel">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <i data-lucide="video" class="brand-icon"></i>
+                    <span>Studio_AI</span>
+                </div>
+                <button id="new-session" class="btn-icon" title="New Project">
+                    <i data-lucide="plus"></i>
+                </button>
             </div>
-          </h3>
-          <div class="assets-list" id="assets-list"></div>
-        </div>
-      </section>
+            
+            <div class="sidebar-content">
+                <div class="section-label">Projects</div>
+                <ul id="session-list" class="session-list">
+                    <!-- Populated by JS -->
+                </ul>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="user-profile">
+                    <div class="avatar">U</div>
+                    <div class="user-info">
+                        <span class="name">User</span>
+                        <span class="status">Pro Plan</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
 
-      <footer class="composer">
-        <div class="composer-container">
-          <textarea id="message"
-            placeholder="Describe the video you want to create (e.g. 'Create a montage from these clips with a moody intro...')"
-            rows="1"></textarea>
-          <button id="send" title="Send Message">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
-        </div>
-      </footer>
-    </main>
-  </div>
+        <!-- Main Workspace -->
+        <main class="workspace">
+            <!-- Top Bar -->
+            <header class="top-bar glass-panel">
+                <div class="project-info">
+                    <h1 id="session-title">Select a Project</h1>
+                    <span id="session-meta" class="badge">No active session</span>
+                </div>
+                <div class="top-actions">
+                    <button class="btn-ghost" title="Settings"><i data-lucide="settings"></i></button>
+                    <button class="btn-ghost" title="Help"><i data-lucide="help-circle"></i></button>
+                </div>
+            </header>
 
-  <script src="/static/app.js"></script>
+            <div class="workspace-grid">
+                <!-- Chat Interface -->
+                <section class="chat-section glass-panel">
+                    <div class="chat-container" id="chat">
+                        <div class="empty-state">
+                            <i data-lucide="sparkles"></i>
+                            <h3>Start Creating</h3>
+                            <p>Select a project or create a new one to begin editing.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="composer-area">
+                        <div class="composer-wrapper">
+                            <textarea id="message" placeholder="Describe your edit..." rows="1"></textarea>
+                            <div class="composer-actions">
+                                <label for="asset-upload" class="btn-icon-small" title="Attach Files">
+                                    <i data-lucide="paperclip"></i>
+                                </label>
+                                <button id="send" class="btn-primary" title="Send Command">
+                                    <i data-lucide="arrow-up"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <input type="file" id="asset-upload" multiple hidden>
+                    </div>
+                </section>
+
+                <!-- Assets Panel -->
+                <aside class="assets-panel glass-panel">
+                    <div class="panel-header">
+                        <h3><i data-lucide="library"></i> Assets</h3>
+                        <div class="panel-actions">
+                             <button id="refresh-assets" class="btn-icon-small" title="Refresh">
+                                <i data-lucide="refresh-cw"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="assets-grid" id="assets-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </div>
+
+    <!-- Background Elements -->
+    <div class="bg-noise"></div>
+    <div class="bg-glow"></div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
-
 </html>
