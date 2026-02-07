@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Editing Agent</title>
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=6">
     <!-- Icons (CDN) -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -33,7 +33,6 @@
                     <h1 id="session-title">Select a Project</h1>
                     <span id="session-meta" class="meta"></span>
                 </div>
-                <!-- Optional Header Actions could go here -->
             </header>
 
             <div class="content-area">
@@ -46,13 +45,6 @@
                     <footer class="composer">
                         <div class="input-group">
                             <textarea id="message" rows="1" placeholder="Describe the video you want to create..."></textarea>
-                            
-                            <!-- File Upload Trigger -->
-                            <input type="file" id="asset-upload" multiple hidden>
-                            <button class="btn-icon" onclick="document.getElementById('asset-upload').click()" title="Attach Files">
-                                <i data-lucide="paperclip"></i>
-                            </button>
-                            
                             <button id="send" class="btn-send">Send</button>
                         </div>
                     </footer>
@@ -62,9 +54,17 @@
                 <aside class="assets-pane">
                     <div class="assets-header">
                         <h3>Assets</h3>
-                        <button id="refresh-assets" class="btn-icon" title="Refresh">
-                            <i data-lucide="refresh-cw"></i>
-                        </button>
+                        <div class="assets-actions">
+                            <!-- Hidden File Input -->
+                            <input type="file" id="asset-upload" multiple hidden>
+                            
+                            <button id="add-asset" class="btn-icon" title="Add Assets" onclick="document.getElementById('asset-upload').click()">
+                                <i data-lucide="plus"></i>
+                            </button>
+                            <button id="delete-assets" class="btn-icon" title="Delete Selected">
+                                <i data-lucide="trash-2"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="assets-list" id="assets-list">
                         <!-- Assets loaded via JS -->
@@ -75,7 +75,7 @@
     </div>
 
     <!-- Application Logic -->
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=5"></script>
     <script>
         // Initialize icons if script loaded
         if (window.lucide) {

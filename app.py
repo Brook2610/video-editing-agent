@@ -8,21 +8,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from agent import run_agent
 from tools import PROJECTS_ROOT
 
+# Initialize App
+app = FastAPI(title="Video Editing Agent")
+
 BASE_DIR = Path(__file__).resolve().parent
 WEB_DIR = BASE_DIR / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
-app = FastAPI(title="Video Editing Agent")
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
-
+# Helper Functions
 def _sanitize_session(name: str) -> str:
     safe = re.sub(r"[^a-zA-Z0-9_-]", "-", name.strip())
     return safe.strip("-") or "session"
@@ -111,7 +113,7 @@ def _save_upload(session_id: str, upload: UploadFile) -> Path:
         handle.write(upload.file.read())
     return target
 
-
+# Routes
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     return TEMPLATES.TemplateResponse("index.html", {"request": request})
@@ -141,6 +143,26 @@ def get_messages(session_id: str) -> JSONResponse:
 @app.get("/api/sessions/{session_id}/assets")
 def get_assets(session_id: str) -> JSONResponse:
     return JSONResponse({"assets": _list_assets(session_id)})
+
+
+@app.get("/api/sessions/{session_id}/assets/{filename:path}")
+def get_asset_file(session_id: str, filename: str) -> Any:
+    assets_dir = _assets_dir(session_id)
+    file_path = (assets_dir / filename).resolve()
+    if not str(file_path).startswith(str(assets_dir.resolve())):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    if not file_path.exists():
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    
+    # Add proper headers for video streaming
+    return FileResponse(
+        file_path,
+        media_type="video/mp4" if file_path.suffix.lower() in ['.mp4', '.mov'] else None,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600"
+        }
+    )
 
 
 @app.post("/api/sessions/{session_id}/message")
@@ -184,8 +206,56 @@ def send_message(
     return JSONResponse({"reply": response_text})
 
 
+@app.post("/api/sessions/{session_id}/assets/delete")
+def delete_assets(
+    session_id: str,
+    asset_names: List[str] = Form(...),
+) -> JSONResponse:
+    assets_dir = _assets_dir(session_id)
+    if not assets_dir.exists():
+        return JSONResponse({"success": False, "error": "Session assets not found"}, status_code=404)
+
+    deleted = []
+    errors = []
+
+    for name in asset_names:
+        # Prevent directory traversal
+        if ".." in name or name.startswith("/"):
+            errors.append(f"Invalid path: {name}")
+            continue
+            
+        target = (assets_dir / name).resolve()
+        
+        # Ensure target is within assets dir
+        if not str(target).startswith(str(assets_dir.resolve())):
+             errors.append(f"Access denied: {name}")
+             continue
+             
+        if target.exists() and target.is_file():
+            try:
+                target.unlink()
+                deleted.append(name)
+            except Exception as e:
+                errors.append(f"Failed to delete {name}: {str(e)}")
+        else:
+            errors.append(f"File not found: {name}")
+
+    return JSONResponse({"deleted": deleted, "errors": errors})
+
+
+@app.post("/api/sessions/{session_id}/assets/upload")
+def upload_assets(
+    session_id: str,
+    files: List[UploadFile] = File(...),
+) -> JSONResponse:
+    _ensure_session(session_id)
+    saved_files = []
+    for upload in files:
+        saved = _save_upload(session_id, upload)
+        saved_files.append(saved.name)
+    return JSONResponse({"uploaded": saved_files})
+
+
 if __name__ == "__main__":
     import uvicorn
-    # Use dirname as cwd to ensure relative imports/paths work
-    # os.chdir(os.path.dirname(os.path.abspath(__file__)))
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
