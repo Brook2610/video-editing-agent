@@ -4,116 +4,83 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Editing Agent</title>
-    
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
+    <!-- CSS -->
     <link rel="stylesheet" href="/static/style.css">
+    <!-- Icons (CDN) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
     <div class="app-container">
         <!-- Sidebar -->
-        <aside class="sidebar glass-panel">
+        <aside class="sidebar">
             <div class="sidebar-header">
-                <div class="brand">
-                    <i data-lucide="video" class="brand-icon"></i>
-                    <span>Studio_AI</span>
-                </div>
+                <h2>Projects</h2>
                 <button id="new-session" class="btn-icon" title="New Project">
                     <i data-lucide="plus"></i>
                 </button>
             </div>
-            
             <div class="sidebar-content">
-                <div class="section-label">Projects</div>
                 <ul id="session-list" class="session-list">
-                    <!-- Populated by JS -->
+                    <!-- Loaded via JS -->
                 </ul>
-            </div>
-            
-            <div class="sidebar-footer">
-                <div class="user-profile">
-                    <div class="avatar">U</div>
-                    <div class="user-info">
-                        <span class="name">User</span>
-                        <span class="status">Pro Plan</span>
-                    </div>
-                </div>
             </div>
         </aside>
 
         <!-- Main Workspace -->
-        <main class="workspace">
-            <!-- Top Bar -->
-            <header class="top-bar glass-panel">
-                <div class="project-info">
+        <main class="main-workspace">
+            <header class="workspace-header">
+                <div>
                     <h1 id="session-title">Select a Project</h1>
-                    <span id="session-meta" class="badge">No active session</span>
+                    <span id="session-meta" class="meta"></span>
                 </div>
-                <div class="top-actions">
-                    <button class="btn-ghost" title="Settings"><i data-lucide="settings"></i></button>
-                    <button class="btn-ghost" title="Help"><i data-lucide="help-circle"></i></button>
-                </div>
+                <!-- Optional Header Actions could go here -->
             </header>
 
-            <div class="workspace-grid">
-                <!-- Chat Interface -->
-                <section class="chat-section glass-panel">
-                    <div class="chat-container" id="chat">
-                        <div class="empty-state">
-                            <i data-lucide="sparkles"></i>
-                            <h3>Start Creating</h3>
-                            <p>Select a project or create a new one to begin editing.</p>
-                        </div>
+            <div class="content-area">
+                <!-- Chat -->
+                <section class="chat-pane">
+                    <div class="chat-history" id="chat">
+                        <!-- Messages go here -->
                     </div>
                     
-                    <div class="composer-area">
-                        <div class="composer-wrapper">
-                            <textarea id="message" placeholder="Describe your edit..." rows="1"></textarea>
-                            <div class="composer-actions">
-                                <label for="asset-upload" class="btn-icon-small" title="Attach Files">
-                                    <i data-lucide="paperclip"></i>
-                                </label>
-                                <button id="send" class="btn-primary" title="Send Command">
-                                    <i data-lucide="arrow-up"></i>
-                                </button>
-                            </div>
+                    <footer class="composer">
+                        <div class="input-group">
+                            <textarea id="message" rows="1" placeholder="Describe the video you want to create..."></textarea>
+                            
+                            <!-- File Upload Trigger -->
+                            <input type="file" id="asset-upload" multiple hidden>
+                            <button class="btn-icon" onclick="document.getElementById('asset-upload').click()" title="Attach Files">
+                                <i data-lucide="paperclip"></i>
+                            </button>
+                            
+                            <button id="send" class="btn-send">Send</button>
                         </div>
-                        <input type="file" id="asset-upload" multiple hidden>
-                    </div>
+                    </footer>
                 </section>
 
                 <!-- Assets Panel -->
-                <aside class="assets-panel glass-panel">
-                    <div class="panel-header">
-                        <h3><i data-lucide="library"></i> Assets</h3>
-                        <div class="panel-actions">
-                             <button id="refresh-assets" class="btn-icon-small" title="Refresh">
-                                <i data-lucide="refresh-cw"></i>
-                            </button>
-                        </div>
+                <aside class="assets-pane">
+                    <div class="assets-header">
+                        <h3>Assets</h3>
+                        <button id="refresh-assets" class="btn-icon" title="Refresh">
+                            <i data-lucide="refresh-cw"></i>
+                        </button>
                     </div>
-                    
-                    <div class="assets-grid" id="assets-list">
-                        <!-- Populated by JS -->
+                    <div class="assets-list" id="assets-list">
+                        <!-- Assets loaded via JS -->
                     </div>
                 </aside>
             </div>
         </main>
     </div>
 
-    <!-- Background Elements -->
-    <div class="bg-noise"></div>
-    <div class="bg-glow"></div>
-
+    <!-- Application Logic -->
     <script src="/static/app.js"></script>
     <script>
-        lucide.createIcons();
+        // Initialize icons if script loaded
+        if (window.lucide) {
+            lucide.createIcons();
+        }
     </script>
 </body>
 </html>

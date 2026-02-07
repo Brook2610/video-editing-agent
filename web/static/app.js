@@ -1,297 +1,266 @@
+// State
 let currentSession = null;
 
 // DOM Elements
-const sessionList = document.getElementById("session-list");
-const sessionTitle = document.getElementById("session-title");
-const sessionMeta = document.getElementById("session-meta");
-const chat = document.getElementById("chat");
-const assetsList = document.getElementById("assets-list");
-const assetUpload = document.getElementById("asset-upload");
-const refreshAssetsButton = document.getElementById("refresh-assets");
-const sendButton = document.getElementById("send");
-const messageInput = document.getElementById("message");
-const newSessionButton = document.getElementById("new-session");
+const els = {
+    sessionList: document.getElementById("session-list"),
+    sessionTitle: document.getElementById("session-title"),
+    sessionMeta: document.getElementById("session-meta"),
+    chat: document.getElementById("chat"),
+    assetsList: document.getElementById("assets-list"),
+    assetUpload: document.getElementById("asset-upload"),
+    refreshAssetsBtn: document.getElementById("refresh-assets"),
+    sendBtn: document.getElementById("send"),
+    messageInput: document.getElementById("message"),
+    newSessionBtn: document.getElementById("new-session")
+};
 
-// Helper to create elements
-function el(tag, className, text) {
-  const e = document.createElement(tag);
-  if (className) e.className = className;
-  if (text) e.textContent = text;
-  return e;
+// Utilities
+function createEl(tag, className, text) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text) el.textContent = text;
+    return el;
 }
 
-// Format date helper
-function formatDate(date) {
-    return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit' }).format(date);
+function updateIcons() {
+    if (window.lucide) window.lucide.createIcons();
 }
 
-function addMessage(role, text) {
-  const msgDiv = el("div", `message ${role}`);
-  // Add Markdown support if needed later, for now text content
-  msgDiv.textContent = text;
-  
-  // Optional: timestamp or avatar could be added here
-  
-  chat.appendChild(msgDiv);
-  chat.scrollTop = chat.scrollHeight;
+function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-function clearChat() {
-  chat.innerHTML = "";
-  // Re-add empty state if needed, but for now just clear
-  if (!currentSession) {
-      chat.innerHTML = `
-        <div class="empty-state">
-            <i data-lucide="sparkles"></i>
-            <h3>Start Creating</h3>
-            <p>Select a project or create a new one to begin editing.</p>
-        </div>`;
-      lucide.createIcons();
-  }
+// UI Rendering
+function renderMessage(role, text) {
+    if (!els.chat) return;
+    const div = createEl("div", `message ${role}`);
+    div.innerText = text; // Safe text insertion
+    els.chat.appendChild(div);
+    els.chat.scrollTop = els.chat.scrollHeight;
 }
 
-async function loadSessions() {
-  try {
-    const res = await fetch("/api/sessions");
-    const data = await res.json();
-    sessionList.innerHTML = "";
+function renderSessionItem(name, isActive) {
+    const li = createEl("li", `session-item ${isActive ? 'active' : ''}`);
+    
+    const icon = document.createElement("i");
+    icon.setAttribute("data-lucide", "video");
+    icon.style.width = "14px";
+    
+    const span = createEl("span", "", name);
+    
+    li.appendChild(icon);
+    li.appendChild(span);
+    
+    li.onclick = () => selectSession(name);
+    return li;
+}
 
-    data.sessions.forEach((session) => {
-      const li = el("li", session === currentSession ? "active" : "");
-      
-      // Project Icon
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", "film"); // Generic video icon
-      icon.style.width = "16px";
-      icon.style.height = "16px";
-      
-      const span = el("span", "", session);
-      
-      li.appendChild(icon);
-      li.appendChild(span);
-      
-      li.addEventListener("click", () => selectSession(session));
-      sessionList.appendChild(li);
+function renderAssetCard(asset) {
+    const card = createEl("div", "asset-card");
+    
+    // Checkbox
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "asset-check";
+    checkbox.value = asset.name;
+    
+    // Preview Icon
+    const preview = createEl("div", "asset-preview");
+    const icon = document.createElement("i");
+    
+    const ext = asset.name.split('.').pop().toLowerCase();
+    let iconName = "file";
+    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) iconName = "image";
+    if (['mp4', 'mov', 'webm'].includes(ext)) iconName = "film";
+    if (['mp3', 'wav'].includes(ext)) iconName = "music";
+    
+    icon.setAttribute("data-lucide", iconName);
+    preview.appendChild(icon);
+    
+    // Info
+    const info = createEl("div", "asset-info");
+    const nameEl = createEl("span", "asset-name", asset.name);
+    const sizeEl = createEl("span", "asset-size", formatSize(asset.size));
+    
+    info.appendChild(nameEl);
+    info.appendChild(sizeEl);
+    
+    card.appendChild(checkbox);
+    card.appendChild(preview);
+    card.appendChild(info);
+    
+    // Toggle check on card click
+    card.addEventListener('click', (e) => {
+        if (e.target !== checkbox) {
+            checkbox.checked = !checkbox.checked;
+        }
     });
-
-    lucide.createIcons();
-
-    if (!currentSession && data.sessions.length > 0) {
-      // Don't auto-select, let user choose, or select first?
-      // Let's select first for convenience
-      selectSession(data.sessions[0]);
-    }
-  } catch (err) {
-    console.error("Failed to load sessions:", err);
-  }
+    
+    return card;
 }
 
-async function selectSession(sessionId) {
-  currentSession = sessionId;
-  sessionTitle.textContent = sessionId;
-  sessionMeta.textContent = "Active Project";
-  sessionMeta.className = "badge";
-  sessionMeta.style.color = "var(--accent-color)";
-  sessionMeta.style.borderColor = "var(--accent-color)";
+// Logic
+async function loadSessions() {
+    try {
+        const res = await fetch("/api/sessions");
+        const data = await res.json();
+        
+        els.sessionList.innerHTML = "";
+        data.sessions.forEach(session => {
+            const li = createEl("li", `session-item ${session === currentSession ? 'active' : ''}`);
+            li.textContent = session; // simple text for now
+            li.onclick = () => selectSession(session);
+            els.sessionList.appendChild(li);
+        });
+        
+        if (window.lucide) window.lucide.createIcons();
+        
+        // Auto-select first if none selected
+        if (!currentSession && data.sessions.length > 0) {
+            selectSession(data.sessions[0]);
+        }
+    } catch (e) {
+        console.error("Load sessions failed", e);
+    }
+}
 
-  // Highlight active session
-  Array.from(sessionList.children).forEach(li => {
-    const text = li.querySelector("span").textContent;
-    li.classList.toggle("active", text === sessionId);
-  });
-
-  await loadMessages();
-  await loadAssets();
+async function selectSession(id) {
+    currentSession = id;
+    if(els.sessionTitle) els.sessionTitle.textContent = id;
+    
+    // Update active class
+    Array.from(els.sessionList.children).forEach(li => {
+        if (li.textContent === id) li.classList.add("active");
+        else li.classList.remove("active");
+    });
+    
+    await loadMessages();
+    await loadAssets();
 }
 
 async function loadMessages() {
-  if (!currentSession) return;
-  try {
-    const res = await fetch(`/api/sessions/${currentSession}/messages`);
-    const data = await res.json();
-    
-    // Clear chat but remove empty state
-    chat.innerHTML = "";
-    
-    data.messages.forEach((msg) => {
-      const role = (msg.role === "human" || msg.role === "user") ? "user" : "ai";
-      addMessage(role, msg.text || "");
-    });
-  } catch (err) {
-    console.error("Failed to load messages:", err);
-  }
+    if (!currentSession) return;
+    try {
+        const res = await fetch(`/api/sessions/${currentSession}/messages`);
+        const data = await res.json();
+        els.chat.innerHTML = "";
+        data.messages.forEach(msg => {
+            const role = (msg.role === 'human' || msg.role === 'user') ? 'user' : 'ai';
+            renderMessage(role, msg.text);
+        });
+    } catch(e) { console.error(e); }
 }
 
 async function loadAssets() {
-  if (!currentSession) return;
-  try {
-    const res = await fetch(`/api/sessions/${currentSession}/assets`);
-    const data = await res.json();
-    assetsList.innerHTML = "";
-
-    if (data.assets.length === 0) {
-        const empty = el("div", "empty-state", "No assets");
-        empty.style.fontSize = "12px";
-        empty.style.padding = "20px";
-        assetsList.appendChild(empty);
-    }
-
-    data.assets.forEach((asset) => {
-      // New Asset Card Structure
-      const card = el("div", "asset-card");
-      
-      // Checkbox (Overlay)
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.value = asset.name;
-      checkbox.className = "asset-select";
-      
-      // Preview
-      const ext = asset.name.split('.').pop().toLowerCase();
-      let iconName = "file";
-      if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) iconName = "image";
-      if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) iconName = "video";
-      if (['mp3', 'wav', 'aac'].includes(ext)) iconName = "music";
-      
-      const preview = el("div", "asset-preview");
-      // Could load real image here if endpoint existed, for now icon
-      const icon = document.createElement("i");
-      icon.setAttribute("data-lucide", iconName);
-      icon.style.opacity = "0.5";
-      preview.appendChild(icon);
-
-      // Info
-      const info = el("div", "asset-info");
-      const name = el("span", "asset-name", asset.name);
-      
-      // Size
-      let sizeStr = "";
-      if (asset.size < 1024) sizeStr = asset.size + " B";
-      else if (asset.size < 1024 * 1024) sizeStr = Math.round(asset.size / 1024) + " KB";
-      else sizeStr = (asset.size / (1024 * 1024)).toFixed(1) + " MB";
-      
-      const meta = el("span", "asset-meta", sizeStr);
-
-      info.appendChild(name);
-      info.appendChild(meta);
-
-      card.appendChild(checkbox);
-      card.appendChild(preview);
-      card.appendChild(info);
-      
-      // Click card to toggle checkbox
-      card.addEventListener("click", (e) => {
-          if (e.target !== checkbox) {
-              checkbox.checked = !checkbox.checked;
-          }
-      });
-
-      assetsList.appendChild(card);
-    });
-    
-    lucide.createIcons();
-    
-  } catch (err) {
-    console.error("Failed to load assets:", err);
-  }
-}
-
-function getSelectedAssets() {
-  const selections = [];
-  assetsList.querySelectorAll("input.asset-select").forEach((el) => {
-    if (el.checked) selections.push(el.value);
-  });
-  return selections;
+    if (!currentSession) return;
+    try {
+        const res = await fetch(`/api/sessions/${currentSession}/assets`);
+        const data = await res.json();
+        els.assetsList.innerHTML = "";
+        
+        if (!data.assets || data.assets.length === 0) {
+            const empty = createEl("div", "", "No assets found.");
+            empty.style.color = "var(--text-muted)";
+            empty.style.fontSize = "12px";
+            empty.style.textAlign = "center";
+            empty.style.padding = "20px";
+            els.assetsList.appendChild(empty);
+        } else {
+            data.assets.forEach(asset => {
+                const card = renderAssetCard(asset);
+                els.assetsList.appendChild(card);
+            });
+        }
+        if (window.lucide) window.lucide.createIcons();
+    } catch(e) { console.error(e); }
 }
 
 async function sendMessage() {
-  if (!currentSession) {
-    alert("Please select or create a project first.");
-    return;
-  }
-
-  const text = messageInput.value.trim();
-  if (!text) return;
-
-  // Clear input
-  messageInput.value = "";
-  // Reset height
-  messageInput.style.height = 'auto';
-
-  // Add user message
-  addMessage("user", text);
-
-  const form = new FormData();
-  form.append("message", text);
-  form.append("asset_names", JSON.stringify(getSelectedAssets()));
-
-  if (assetUpload.files.length > 0) {
-    Array.from(assetUpload.files).forEach((file) => {
-      form.append("files", file);
-    });
-    assetUpload.value = "";
-  }
-
-  // Loading state
-  const loadingDiv = el("div", "message ai", "Thinking...");
-  const spinner = document.createElement("i");
-  spinner.setAttribute("data-lucide", "loader-2");
-  spinner.classList.add("spin"); // Define spin animation in css if needed, or just static text
-  // Actually, let's just use text for simplicity unless I add keyframes
-  chat.appendChild(loadingDiv);
-  chat.scrollTop = chat.scrollHeight;
-
-  try {
-    const res = await fetch(`/api/sessions/${currentSession}/message`, {
-      method: "POST",
-      body: form,
-    });
-
-    if (!res.ok) throw new Error(`Server error: ${res.status}`);
-    const data = await res.json();
-
-    chat.removeChild(loadingDiv);
-    addMessage("ai", data.reply || "(No response text)");
-    await loadAssets();
-
-  } catch (err) {
-    loadingDiv.textContent = `Error: ${err.message}`;
-    loadingDiv.style.color = "#ef4444";
-  }
+    if (!currentSession) return alert("Select a project first.");
+    
+    const text = els.messageInput.value.trim();
+    if (!text) return;
+    
+    els.messageInput.value = "";
+    els.messageInput.style.height = "auto";
+    
+    renderMessage("user", text);
+    
+    // Collect data
+    const form = new FormData();
+    form.append("message", text);
+    
+    // Assets
+    const selectedAssets = Array.from(document.querySelectorAll(".asset-check:checked")).map(cb => cb.value);
+    form.append("asset_names", JSON.stringify(selectedAssets));
+    
+    // Files
+    if (els.assetUpload.files.length > 0) {
+        Array.from(els.assetUpload.files).forEach(f => form.append("files", f));
+        els.assetUpload.value = ""; // Reset
+    }
+    
+    // Loading indicator
+    const loadingId = "loading-" + Date.now();
+    const loadingDiv = createEl("div", "message ai", "Processing...");
+    loadingDiv.id = loadingId;
+    els.chat.appendChild(loadingDiv);
+    els.chat.scrollTop = els.chat.scrollHeight;
+    
+    try {
+        const res = await fetch(`/api/sessions/${currentSession}/message`, {
+            method: "POST",
+            body: form
+        });
+        
+        const data = await res.json();
+        
+        // Replace loading
+        const loader = document.getElementById(loadingId);
+        if (loader) loader.remove();
+        
+        renderMessage("ai", data.reply || "Done.");
+        loadAssets(); // Refresh assets
+        
+    } catch (e) {
+        const loader = document.getElementById(loadingId);
+        if (loader) loader.innerText = "Error: " + e.message;
+    }
 }
 
 // Event Listeners
-newSessionButton.addEventListener("click", async () => {
-  const name = prompt("Enter project name:");
-  if (!name) return;
+els.newSessionBtn.onclick = async () => {
+    const name = prompt("Project Name:");
+    if (name) {
+        const form = new FormData();
+        form.append("name", name);
+        const res = await fetch("/api/sessions", { method: "POST", body: form });
+        const data = await res.json();
+        await loadSessions();
+        selectSession(data.session);
+    }
+};
 
-  const form = new FormData();
-  form.append("name", name);
-  try {
-    const res = await fetch("/api/sessions", { method: "POST", body: form });
-    const data = await res.json();
-    await loadSessions();
-    selectSession(data.session);
-  } catch (e) {
-    alert("Failed to create session: " + e);
-  }
-});
+els.refreshAssetsBtn.onclick = loadAssets;
+els.sendBtn.onclick = sendMessage;
 
-refreshAssetsButton.addEventListener("click", loadAssets);
-sendButton.addEventListener("click", sendMessage);
+els.messageInput.onkeydown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+};
 
-messageInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-});
-
-// Auto-resize textarea
-messageInput.addEventListener("input", function() {
+// Auto-expand textarea
+els.messageInput.oninput = function() {
     this.style.height = "auto";
     this.style.height = (this.scrollHeight) + "px";
-});
+};
 
-// Initial Load
+// Init
 loadSessions();
