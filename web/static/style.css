@@ -434,6 +434,14 @@ textarea {
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); /* Grid layout for cards */
   gap: 12px;
   align-content: start;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.assets-list.drag-over {
+  background-color: rgba(99, 102, 241, 0.05);
+  outline: 2px dashed var(--accent-primary);
+  outline-offset: -8px;
 }
 
 /* Enhanced Asset Card */

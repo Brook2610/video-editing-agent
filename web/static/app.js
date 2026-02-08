@@ -248,11 +248,11 @@ async function loadAssets() {
     els.assetsList.innerHTML = "";
     
     if (data.assets.length === 0) {
-        const empty = createEl("div", "", "No assets found.");
+        const empty = createEl("div", "", "No assets yet. Drag & drop files here.");
         empty.style.color = "var(--text-muted)";
         empty.style.fontSize = "12px";
         empty.style.textAlign = "center";
-        empty.style.padding = "20px";
+        empty.style.padding = "40px 20px";
         els.assetsList.appendChild(empty);
     } else {
         data.assets.forEach(asset => {
@@ -260,6 +260,9 @@ async function loadAssets() {
         });
     }
     updateIcons();
+    
+    // Setup drag and drop
+    setupDragAndDrop();
 }
 
 async function sendMessage() {
@@ -344,6 +347,66 @@ async function uploadAssets() {
     } finally {
         els.assetUpload.value = ""; // Reset
     }
+}
+
+async function uploadFiles(files) {
+    if (!currentSession) return alert("Select a project first.");
+    if (!files || files.length === 0) return;
+
+    const form = new FormData();
+    Array.from(files).forEach(f => form.append("files", f));
+    
+    try {
+        const res = await fetch(`/api/sessions/${currentSession}/assets/upload`, {
+            method: "POST",
+            body: form
+        });
+        
+        if (res.ok) {
+            loadAssets();
+        } else {
+            alert("Upload failed.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Upload error: " + e.message);
+    }
+}
+
+function setupDragAndDrop() {
+    const assetsList = els.assetsList;
+    
+    if (!assetsList) return;
+    
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        assetsList.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    // Visual feedback when dragging over
+    ['dragenter', 'dragover'].forEach(eventName => {
+        assetsList.addEventListener(eventName, () => {
+            assetsList.classList.add('drag-over');
+        }, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        assetsList.addEventListener(eventName, () => {
+            assetsList.classList.remove('drag-over');
+        }, false);
+    });
+    
+    // Handle dropped files
+    assetsList.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        uploadFiles(files);
+    }, false);
 }
 
 async function deleteAssets() {
