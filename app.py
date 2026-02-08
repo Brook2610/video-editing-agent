@@ -35,7 +35,8 @@ def _session_dir(session_id: str) -> Path:
 
 
 def _assets_dir(session_id: str) -> Path:
-    return _session_dir(session_id) / "assets"
+    """Returns the public/assets directory for Remotion compatibility."""
+    return _session_dir(session_id) / "public" / "assets"
 
 
 def _ensure_session(session_id: str) -> Path:

@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Editing Agent</title>
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/style.css?v=6">
+    <link rel="stylesheet" href="/static/style.css?v=8">
+    <!-- Markdown CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown-dark.min.css">
     <!-- Icons (CDN) -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -74,8 +76,10 @@
         </main>
     </div>
 
+    <!-- Marked.js for Markdown (load before app.js) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
     <!-- Application Logic -->
-    <script src="/static/app.js?v=5"></script>
+    <script src="/static/app.js?v=7"></script>
     <script>
         // Initialize icons if script loaded
         if (window.lucide) {

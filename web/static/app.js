@@ -41,7 +41,26 @@ function formatSize(bytes) {
 function renderMessage(role, text) {
     if (!els.chat) return;
     const div = createEl("div", `message ${role}`);
-    div.innerText = text; // Safe text insertion
+    
+    if (role === 'ai') {
+        // Render markdown for AI messages
+        div.classList.add('markdown-body');
+        try {
+            div.innerHTML = marked.parse(text, {
+                breaks: true,
+                gfm: true,
+                headerIds: false,
+                mangle: false
+            });
+        } catch (e) {
+            console.error('Markdown parse error:', e);
+            div.innerText = text;
+        }
+    } else {
+        // Plain text for user messages
+        div.innerText = text;
+    }
+    
     els.chat.appendChild(div);
     els.chat.scrollTop = els.chat.scrollHeight;
 }
@@ -73,7 +92,8 @@ function renderAssetCard(asset) {
     
     // Preview Logic
     const preview = createEl("div", "asset-preview");
-    const ext = asset.name.split('.').pop().toLowerCase();
+    const fileName = asset.name.split('/').pop() || asset.name; // Get just filename
+    const ext = fileName.split('.').pop().toLowerCase();
     
     // Can we show a real preview?
     const assetUrl = `/api/sessions/${currentSession}/assets/${encodeURIComponent(asset.name)}`;
@@ -130,7 +150,18 @@ function renderAssetCard(asset) {
     
     // Info
     const info = createEl("div", "asset-info");
-    info.appendChild(createEl("span", "asset-name", asset.name));
+    
+    // Show filename only (not full path) for cleaner display
+    const nameSpan = createEl("span", "asset-name", fileName);
+    nameSpan.title = asset.name; // Full path on hover
+    
+    // Add path indicator if in subdirectory
+    if (asset.name.includes('/')) {
+        const pathSpan = createEl("span", "asset-path", "public/assets/" + asset.name.substring(0, asset.name.lastIndexOf('/')));
+        info.appendChild(pathSpan);
+    }
+    
+    info.appendChild(nameSpan);
     info.appendChild(createEl("span", "asset-size", formatSize(asset.size)));
     
     card.appendChild(checkbox);
