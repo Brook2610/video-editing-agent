@@ -1,6 +1,7 @@
 // State
 let currentSession = null;
 let viewMode = false;
+let lastTimeInsert = null;
 
 // DOM Elements
 const els = {
@@ -42,6 +43,277 @@ function formatSize(bytes) {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function formatTimestamp(seconds) {
+    const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    const pad = (value) => String(value).padStart(2, "0");
+    if (hours > 0) {
+        return `${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
+    }
+    return `${pad(minutes)}:${pad(secs)}`;
+}
+
+function insertTimecode(input, timeText) {
+    if (!input) return;
+    const now = Date.now();
+    const value = input.value || "";
+    const selectionStart = input.selectionStart ?? value.length;
+    const selectionEnd = input.selectionEnd ?? value.length;
+
+    if (lastTimeInsert && lastTimeInsert.input === input && (now - lastTimeInsert.timestamp) <= 4000) {
+        const startIndex = lastTimeInsert.index;
+        const endIndex = startIndex + lastTimeInsert.timeText.length;
+        if (value.slice(startIndex, endIndex) === lastTimeInsert.timeText) {
+            const rangeText = `${lastTimeInsert.timeText}-${timeText}`;
+            input.value = value.slice(0, startIndex) + rangeText + value.slice(endIndex);
+            const cursorPos = startIndex + rangeText.length;
+            input.selectionStart = cursorPos;
+            input.selectionEnd = cursorPos;
+            lastTimeInsert = null;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            return;
+        }
+    }
+
+    const needsPrefixSpace = selectionStart > 0 && !/\s/.test(value[selectionStart - 1]);
+    const needsSuffixSpace = selectionEnd < value.length && !/\s/.test(value[selectionEnd]);
+    const prefix = needsPrefixSpace ? " " : "";
+    const suffix = needsSuffixSpace ? " " : "";
+    const insertText = `${prefix}${timeText}${suffix}`;
+
+    input.value = value.slice(0, selectionStart) + insertText + value.slice(selectionEnd);
+    const cursorPos = selectionStart + insertText.length;
+    input.selectionStart = cursorPos;
+    input.selectionEnd = cursorPos;
+
+    lastTimeInsert = {
+        input,
+        timeText,
+        index: selectionStart + prefix.length,
+        timestamp: now
+    };
+
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function handleVideoTimecodeDblClick(videoEl) {
+    const input = viewMode ? els.messageViewInput : els.messageInput;
+    if (!input || !videoEl) return;
+    const timeText = formatTimestamp(videoEl.currentTime);
+    insertTimecode(input, timeText);
+    input.focus();
+}
+
+function buildVideoControls(videoEl) {
+    const controls = document.createElement('div');
+    controls.className = 'video-controls';
+
+    const left = document.createElement('div');
+    left.className = 'controls-left';
+
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'control-btn';
+    const playIcon = document.createElement('i');
+    playIcon.setAttribute('data-lucide', 'play');
+    playBtn.appendChild(playIcon);
+
+    const timeLabel = document.createElement('span');
+    timeLabel.className = 'time-label';
+    timeLabel.textContent = '00:00 / 00:00';
+
+    left.appendChild(playBtn);
+    left.appendChild(timeLabel);
+
+    const center = document.createElement('div');
+    center.className = 'controls-center';
+
+    const rangeWrap = document.createElement('div');
+    rangeWrap.className = 'timeline-wrap';
+    rangeWrap.dataset.tooltip = 'Double click to insert timeline';
+
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.className = 'timeline-range';
+    range.min = 0;
+    range.max = 0;
+    range.step = 0.01;
+    range.value = 0;
+
+    rangeWrap.appendChild(range);
+    center.appendChild(rangeWrap);
+
+    const right = document.createElement('div');
+    right.className = 'controls-right';
+
+    const muteBtn = document.createElement('button');
+    muteBtn.type = 'button';
+    muteBtn.className = 'control-btn';
+    const muteIcon = document.createElement('i');
+    muteIcon.setAttribute('data-lucide', 'volume-2');
+    muteBtn.appendChild(muteIcon);
+
+    const volume = document.createElement('input');
+    volume.type = 'range';
+    volume.className = 'volume-range';
+    volume.min = 0;
+    volume.max = 1;
+    volume.step = 0.01;
+    volume.value = videoEl.volume ?? 1;
+
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.type = 'button';
+    fullscreenBtn.className = 'control-btn';
+    const fsIcon = document.createElement('i');
+    fsIcon.setAttribute('data-lucide', 'fullscreen');
+    fullscreenBtn.appendChild(fsIcon);
+
+    right.appendChild(muteBtn);
+    right.appendChild(volume);
+    right.appendChild(fullscreenBtn);
+
+    controls.appendChild(left);
+    controls.appendChild(center);
+    controls.appendChild(right);
+
+    const updateTimeLabel = () => {
+        const current = formatTimestamp(videoEl.currentTime);
+        const total = Number.isFinite(videoEl.duration)
+            ? formatTimestamp(videoEl.duration)
+            : '00:00';
+        timeLabel.textContent = `${current} / ${total}`;
+    };
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'timeline-tooltip';
+    tooltip.textContent = 'Double click to insert timeline';
+    rangeWrap.appendChild(tooltip);
+
+    const setButtonIcon = (btn, name) => {
+        btn.innerHTML = '';
+        const icon = document.createElement('i');
+        icon.setAttribute('data-lucide', name);
+        btn.appendChild(icon);
+        updateIcons();
+    };
+
+    const updatePlayIcon = () => {
+        setButtonIcon(playBtn, videoEl.paused ? 'play' : 'pause');
+    };
+
+    const updateMuteIcon = () => {
+        setButtonIcon(muteBtn, videoEl.muted ? 'volume-x' : 'volume-2');
+    };
+
+    const hasAudioTrack = () => {
+        if (Array.isArray(videoEl.audioTracks)) {
+            return videoEl.audioTracks.length > 0;
+        }
+        if (typeof videoEl.mozHasAudio === 'boolean') {
+            return videoEl.mozHasAudio;
+        }
+        if (typeof videoEl.webkitAudioDecodedByteCount === 'number') {
+            return videoEl.webkitAudioDecodedByteCount > 0;
+        }
+        return true;
+    };
+
+    const syncAudioControls = () => {
+        const enabled = hasAudioTrack();
+        muteBtn.disabled = !enabled;
+        volume.disabled = !enabled;
+        muteBtn.classList.toggle('disabled', !enabled);
+        volume.classList.toggle('disabled', !enabled);
+    };
+
+    playBtn.addEventListener('click', () => {
+        if (videoEl.paused) {
+            videoEl.play().catch(() => {});
+        } else {
+            videoEl.pause();
+        }
+    });
+
+    muteBtn.addEventListener('click', () => {
+        if (muteBtn.disabled) return;
+        videoEl.muted = !videoEl.muted;
+        updateMuteIcon();
+    });
+
+    volume.addEventListener('input', () => {
+        if (volume.disabled) return;
+        videoEl.volume = Number(volume.value);
+        if (videoEl.volume > 0 && videoEl.muted) {
+            videoEl.muted = false;
+            updateMuteIcon();
+        }
+    });
+
+    fullscreenBtn.addEventListener('click', () => {
+        const target = videoEl.closest('.view-video-container') || videoEl;
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(() => {});
+        } else if (target.requestFullscreen) {
+            target.requestFullscreen().catch(() => {});
+        }
+    });
+
+    videoEl.addEventListener('loadedmetadata', () => {
+        range.max = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+        updateTimeLabel();
+        syncAudioControls();
+    });
+
+    videoEl.addEventListener('timeupdate', () => {
+        if (!Number.isFinite(videoEl.duration)) return;
+        range.value = videoEl.currentTime;
+        const pct = (videoEl.currentTime / videoEl.duration) * 100;
+        range.style.setProperty('--progress', `${pct}%`);
+        updateTimeLabel();
+    });
+
+    videoEl.addEventListener('play', updatePlayIcon);
+    videoEl.addEventListener('pause', updatePlayIcon);
+    videoEl.addEventListener('volumechange', updateMuteIcon);
+
+    range.addEventListener('input', () => {
+        if (!Number.isFinite(videoEl.duration)) return;
+        videoEl.currentTime = Number(range.value);
+        const pct = (videoEl.currentTime / videoEl.duration) * 100;
+        range.style.setProperty('--progress', `${pct}%`);
+    });
+
+    rangeWrap.addEventListener('mousemove', (e) => {
+        const rect = rangeWrap.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        tooltip.style.left = `${Math.max(12, Math.min(rect.width - 12, x))}px`;
+        tooltip.style.opacity = '1';
+    });
+
+    rangeWrap.addEventListener('mouseleave', () => {
+        tooltip.style.opacity = '0';
+    });
+
+    range.addEventListener('dblclick', (e) => {
+        if (!Number.isFinite(videoEl.duration)) return;
+        const rect = range.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        const targetTime = pct * videoEl.duration;
+        videoEl.currentTime = targetTime;
+        range.style.setProperty('--progress', `${pct * 100}%`);
+        handleVideoTimecodeDblClick(videoEl);
+    });
+
+    updatePlayIcon();
+    updateMuteIcon();
+    updateTimeLabel();
+    syncAudioControls();
+    updateIcons();
+    return controls;
 }
 
 // UI Rendering
@@ -513,12 +785,17 @@ function openInViewMode(url, type) {
         img.className = 'view-media image';
         els.viewContent.appendChild(img);
     } else if (type === 'video') {
+        const container = document.createElement('div');
+        container.className = 'view-video-container';
+
         const video = document.createElement('video');
         video.src = url;
         video.className = 'view-media video';
-        video.controls = true;
+        video.controls = false;
         video.autoplay = true;
-        els.viewContent.appendChild(video);
+        container.appendChild(video);
+        container.appendChild(buildVideoControls(video));
+        els.viewContent.appendChild(container);
     }
 }
 
