@@ -17,9 +17,6 @@ const els = {
     newSessionBtn: document.getElementById("new-session")
 };
 
-// Auto-refresh interval for outputs
-let outputRefreshInterval = null;
-
 // Utilities
 function createEl(tag, className, text) {
     const el = document.createElement(tag);
@@ -231,9 +228,6 @@ async function selectSession(id) {
     });
     
     await Promise.all([loadMessages(), loadAssets(), loadOutputs()]);
-    
-    // Start polling for output updates
-    startOutputPolling();
 }
 
 async function loadMessages() {
@@ -422,13 +416,6 @@ async function loadOutputs() {
         const res = await fetch(`/api/sessions/${currentSession}/outputs`);
         const data = await res.json();
         
-        // Check if outputs have changed
-        const currentOutputs = JSON.stringify(data.outputs);
-        if (els.outputList.dataset.lastOutputs === currentOutputs) {
-            return; // No changes, skip update
-        }
-        els.outputList.dataset.lastOutputs = currentOutputs;
-        
         els.outputList.innerHTML = "";
         
         if (data.outputs.length === 0) {
@@ -446,27 +433,6 @@ async function loadOutputs() {
         updateIcons();
     } catch (e) {
         console.error("Load outputs failed", e);
-    }
-}
-
-function startOutputPolling() {
-    // Clear any existing interval
-    if (outputRefreshInterval) {
-        clearInterval(outputRefreshInterval);
-    }
-    
-    // Poll every 3 seconds
-    outputRefreshInterval = setInterval(() => {
-        if (currentSession) {
-            loadOutputs();
-        }
-    }, 3000);
-}
-
-function stopOutputPolling() {
-    if (outputRefreshInterval) {
-        clearInterval(outputRefreshInterval);
-        outputRefreshInterval = null;
     }
 }
 
@@ -492,9 +458,10 @@ function renderOutputItem(output) {
     item.appendChild(icon);
     item.appendChild(info);
     
-    // Click to download/view
+    // Click to download/view with cache busting
     item.onclick = () => {
-        const url = `/api/sessions/${currentSession}/outputs/${encodeURIComponent(output.name)}`;
+        const timestamp = Date.now();
+        const url = `/api/sessions/${currentSession}/outputs/${encodeURIComponent(output.name)}?t=${timestamp}`;
         window.open(url, '_blank');
     };
     

@@ -116,11 +116,13 @@ def _list_outputs(session_id: str) -> List[Dict[str, Any]]:
     results: List[Dict[str, Any]] = []
     for path in outputs.rglob("*"):
         if path.is_file():
+            stat = path.stat()
             results.append({
                 "name": str(path.relative_to(outputs)),
-                "size": path.stat().st_size,
+                "size": stat.st_size,
+                "modified": int(stat.st_mtime * 1000),  # milliseconds timestamp
             })
-    return sorted(results, key=lambda item: item["name"])
+    return sorted(results, key=lambda item: item["modified"], reverse=True)  # newest first
 
 
 def _save_upload(session_id: str, upload: UploadFile) -> Path:
@@ -240,13 +242,15 @@ def get_output_file(session_id: str, filename: str) -> Any:
     if not file_path.exists():
         return JSONResponse({"error": "File not found"}, status_code=404)
     
-    # Add proper headers for video streaming
+    # Disable caching for output files so updates are always fresh
     return FileResponse(
         file_path,
         media_type="video/mp4" if file_path.suffix.lower() in ['.mp4', '.mov'] else None,
         headers={
             "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=3600"
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
         }
     )
 
