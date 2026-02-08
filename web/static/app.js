@@ -1,5 +1,6 @@
 // State
 let currentSession = null;
+let viewMode = false;
 
 // DOM Elements
 const els = {
@@ -7,14 +8,20 @@ const els = {
     sessionTitle: document.getElementById("session-title"),
     sessionMeta: document.getElementById("session-meta"),
     chat: document.getElementById("chat"),
+    chatPane: document.getElementById("chat-pane"),
+    viewPane: document.getElementById("view-pane"),
+    viewContent: document.getElementById("view-content"),
     assetsList: document.getElementById("assets-list"),
     outputList: document.getElementById("output-list"),
     assetUpload: document.getElementById("asset-upload"),
     deleteAssetsBtn: document.getElementById("delete-assets"),
     addAssetBtn: document.getElementById("add-asset"),
     sendBtn: document.getElementById("send"),
+    sendViewBtn: document.getElementById("send-view"),
     messageInput: document.getElementById("message"),
-    newSessionBtn: document.getElementById("new-session")
+    messageViewInput: document.getElementById("message-view"),
+    newSessionBtn: document.getElementById("new-session"),
+    toggleOptions: document.querySelectorAll(".toggle-option")
 };
 
 // Utilities
@@ -103,6 +110,12 @@ function renderAssetCard(asset) {
         img.src = assetUrl;
         img.loading = "lazy";
         preview.appendChild(img);
+        
+        // Double-click to view
+        preview.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            openInViewMode(assetUrl, 'image');
+        });
     } else if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
         // Video thumbnail/preview
         console.log('Creating video preview for:', asset.name, 'URL:', assetUrl);
@@ -138,6 +151,12 @@ function renderAssetCard(asset) {
             video.currentTime = 0.5;
         };
         preview.appendChild(video);
+        
+        // Double-click to view
+        preview.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            openInViewMode(assetUrl, 'video');
+        });
     } else {
         // Fallback Icon
         const icon = document.createElement("i");
@@ -168,9 +187,9 @@ function renderAssetCard(asset) {
     card.appendChild(preview);
     card.appendChild(info);
     
-    // Toggle check on card click
+    // Single click to toggle checkbox (not on preview)
     card.addEventListener('click', (e) => {
-        if (e.target !== checkbox) {
+        if (e.target !== checkbox && !preview.contains(e.target)) {
             checkbox.checked = !checkbox.checked;
         }
     });
@@ -268,25 +287,19 @@ async function loadAssets() {
 async function sendMessage() {
     if (!currentSession) return alert("Select a project first.");
     
-    const text = els.messageInput.value.trim();
+    // Get the active input based on current mode
+    const input = viewMode ? els.messageViewInput : els.messageInput;
+    const text = input.value.trim();
     if (!text) return;
     
-    els.messageInput.value = "";
-    els.messageInput.style.height = "auto";
+    input.value = "";
+    input.style.height = "auto";
     
     renderMessage("user", text);
     
     // Collect data
     const form = new FormData();
     form.append("message", text);
-    
-    // Note: Assets are now managed separately via Add/Remove buttons,
-    // so we don't strictly need to attach them here unless the agent needs context.
-    // However, the agent *does* need to know which assets to use.
-    // The previous design attached selected assets. Let's keep that but rely on what's in the folder?
-    // Or allow specific selection for the prompt.
-    // For now, let's assume all assets in the folder are available to the agent,
-    // or pass the selected ones if any are checked.
     
     const selectedAssets = Array.from(document.querySelectorAll(".asset-check:checked")).map(cb => cb.value);
     if (selectedAssets.length > 0) {
@@ -441,7 +454,10 @@ function renderOutputItem(output) {
     
     const icon = document.createElement("i");
     const ext = output.name.split('.').pop().toLowerCase();
-    if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) {
+    const isVideo = ['mp4', 'webm', 'mov', 'avi'].includes(ext);
+    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+    
+    if (isVideo) {
         icon.setAttribute("data-lucide", "video");
     } else if (['mp3', 'wav', 'aac'].includes(ext)) {
         icon.setAttribute("data-lucide", "music");
@@ -458,14 +474,52 @@ function renderOutputItem(output) {
     item.appendChild(icon);
     item.appendChild(info);
     
-    // Click to download/view with cache busting
-    item.onclick = () => {
+    // Double-click to view in view mode
+    item.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
         const timestamp = Date.now();
         const url = `/api/sessions/${currentSession}/outputs/${encodeURIComponent(output.name)}?t=${timestamp}`;
-        window.open(url, '_blank');
-    };
+        if (isVideo || isImage) {
+            openInViewMode(url, isVideo ? 'video' : 'image');
+        } else {
+            window.open(url, '_blank');
+        }
+    });
     
     return item;
+}
+
+function openInViewMode(url, type) {
+    // Switch to view mode
+    viewMode = true;
+    els.chatPane.style.display = 'none';
+    els.viewPane.style.display = 'flex';
+    
+    // Update slider
+    els.toggleOptions.forEach(opt => {
+        if (opt.dataset.mode === 'view') {
+            opt.classList.add('active');
+        } else {
+            opt.classList.remove('active');
+        }
+    });
+    
+    // Clear and add media
+    els.viewContent.innerHTML = '';
+    
+    if (type === 'image') {
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'view-media image';
+        els.viewContent.appendChild(img);
+    } else if (type === 'video') {
+        const video = document.createElement('video');
+        video.src = url;
+        video.className = 'view-media video';
+        video.controls = true;
+        video.autoplay = true;
+        els.viewContent.appendChild(video);
+    }
 }
 
 async function deleteAssets() {
@@ -512,6 +566,29 @@ if(els.newSessionBtn) {
 
 if(els.deleteAssetsBtn) els.deleteAssetsBtn.onclick = deleteAssets;
 if(els.sendBtn) els.sendBtn.onclick = sendMessage;
+if(els.sendViewBtn) els.sendViewBtn.onclick = sendMessage;
+
+// Setup toggle slider
+els.toggleOptions.forEach(option => {
+    option.addEventListener('click', () => {
+        const mode = option.dataset.mode;
+        
+        // Update active state
+        els.toggleOptions.forEach(opt => opt.classList.remove('active'));
+        option.classList.add('active');
+        
+        // Switch mode
+        if (mode === 'view') {
+            viewMode = true;
+            els.chatPane.style.display = 'none';
+            els.viewPane.style.display = 'flex';
+        } else {
+            viewMode = false;
+            els.chatPane.style.display = 'flex';
+            els.viewPane.style.display = 'none';
+        }
+    });
+});
 
 if(els.assetUpload) {
     els.assetUpload.onchange = uploadAssets;
@@ -527,6 +604,21 @@ if(els.messageInput) {
     
     // Auto-expand textarea
     els.messageInput.oninput = function() {
+        this.style.height = "auto";
+        this.style.height = (this.scrollHeight) + "px";
+    };
+}
+
+if(els.messageViewInput) {
+    els.messageViewInput.onkeydown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+    
+    // Auto-expand textarea
+    els.messageViewInput.oninput = function() {
         this.style.height = "auto";
         this.style.height = (this.scrollHeight) + "px";
     };

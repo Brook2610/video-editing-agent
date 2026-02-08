@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Editing Agent</title>
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/style.css?v=12">
+    <link rel="stylesheet" href="/static/style.css?v=15">
     <!-- Markdown CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown-dark.min.css">
     <!-- Icons (CDN) -->
@@ -35,11 +35,28 @@
                     <h1 id="session-title">Select a Project</h1>
                     <span id="session-meta" class="meta"></span>
                 </div>
+                <div class="header-center">
+                    <div class="view-toggle-slider">
+                        <button class="toggle-option active" data-mode="chat">
+                            <i data-lucide="message-square"></i>
+                            <span>Chat</span>
+                        </button>
+                        <button class="toggle-option" data-mode="view">
+                            <i data-lucide="eye"></i>
+                            <span>View</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-account" title="Account">
+                        <i data-lucide="user"></i>
+                    </button>
+                </div>
             </header>
 
             <div class="content-area">
                 <!-- Chat -->
-                <section class="chat-pane">
+                <section class="chat-pane" id="chat-pane">
                     <div class="chat-history" id="chat">
                         <!-- Messages go here -->
                     </div>
@@ -48,6 +65,23 @@
                         <div class="input-group">
                             <textarea id="message" rows="1" placeholder="Describe the video you want to create..."></textarea>
                             <button id="send" class="btn-send">Send</button>
+                        </div>
+                    </footer>
+                </section>
+
+                <!-- View Mode -->
+                <section class="view-pane" id="view-pane" style="display: none;">
+                    <div class="view-content" id="view-content">
+                        <div class="view-placeholder">
+                            <i data-lucide="image"></i>
+                            <p>Double-click any image or video to view</p>
+                        </div>
+                    </div>
+                    
+                    <footer class="composer">
+                        <div class="input-group">
+                            <textarea id="message-view" rows="1" placeholder="Describe the video you want to create..."></textarea>
+                            <button id="send-view" class="btn-send">Send</button>
                         </div>
                     </footer>
                 </section>
@@ -92,7 +126,7 @@
     <!-- Marked.js for Markdown (load before app.js) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
     <!-- Application Logic -->
-    <script src="/static/app.js?v=12"></script>
+    <script src="/static/app.js?v=14"></script>
     <script>
         // Initialize icons if script loaded
         if (window.lucide) {
