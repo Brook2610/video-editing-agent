@@ -8,14 +8,17 @@ const els = {
     sessionMeta: document.getElementById("session-meta"),
     chat: document.getElementById("chat"),
     assetsList: document.getElementById("assets-list"),
+    outputList: document.getElementById("output-list"),
     assetUpload: document.getElementById("asset-upload"),
-    // refreshAssetsBtn removed
     deleteAssetsBtn: document.getElementById("delete-assets"),
     addAssetBtn: document.getElementById("add-asset"),
     sendBtn: document.getElementById("send"),
     messageInput: document.getElementById("message"),
     newSessionBtn: document.getElementById("new-session")
 };
+
+// Auto-refresh interval for outputs
+let outputRefreshInterval = null;
 
 // Utilities
 function createEl(tag, className, text) {
@@ -227,7 +230,10 @@ async function selectSession(id) {
         else li.classList.remove("active");
     });
     
-    await Promise.all([loadMessages(), loadAssets()]);
+    await Promise.all([loadMessages(), loadAssets(), loadOutputs()]);
+    
+    // Start polling for output updates
+    startOutputPolling();
 }
 
 async function loadMessages() {
@@ -314,6 +320,7 @@ async function sendMessage() {
         
         renderMessage("ai", data.reply || "Done.");
         loadAssets(); // Refresh assets as agent might have created output
+        loadOutputs(); // Refresh outputs as agent might have rendered video
         
     } catch (e) {
         const loader = document.getElementById(loadingId);
@@ -407,6 +414,91 @@ function setupDragAndDrop() {
         const files = dt.files;
         uploadFiles(files);
     }, false);
+}
+
+async function loadOutputs() {
+    if (!currentSession) return;
+    try {
+        const res = await fetch(`/api/sessions/${currentSession}/outputs`);
+        const data = await res.json();
+        
+        // Check if outputs have changed
+        const currentOutputs = JSON.stringify(data.outputs);
+        if (els.outputList.dataset.lastOutputs === currentOutputs) {
+            return; // No changes, skip update
+        }
+        els.outputList.dataset.lastOutputs = currentOutputs;
+        
+        els.outputList.innerHTML = "";
+        
+        if (data.outputs.length === 0) {
+            const empty = createEl("div", "", "No output files yet.");
+            empty.style.color = "var(--text-muted)";
+            empty.style.fontSize = "12px";
+            empty.style.textAlign = "center";
+            empty.style.padding = "20px";
+            els.outputList.appendChild(empty);
+        } else {
+            data.outputs.forEach(output => {
+                els.outputList.appendChild(renderOutputItem(output));
+            });
+        }
+        updateIcons();
+    } catch (e) {
+        console.error("Load outputs failed", e);
+    }
+}
+
+function startOutputPolling() {
+    // Clear any existing interval
+    if (outputRefreshInterval) {
+        clearInterval(outputRefreshInterval);
+    }
+    
+    // Poll every 3 seconds
+    outputRefreshInterval = setInterval(() => {
+        if (currentSession) {
+            loadOutputs();
+        }
+    }, 3000);
+}
+
+function stopOutputPolling() {
+    if (outputRefreshInterval) {
+        clearInterval(outputRefreshInterval);
+        outputRefreshInterval = null;
+    }
+}
+
+function renderOutputItem(output) {
+    const item = createEl("div", "output-item");
+    
+    const icon = document.createElement("i");
+    const ext = output.name.split('.').pop().toLowerCase();
+    if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) {
+        icon.setAttribute("data-lucide", "video");
+    } else if (['mp3', 'wav', 'aac'].includes(ext)) {
+        icon.setAttribute("data-lucide", "music");
+    } else {
+        icon.setAttribute("data-lucide", "file");
+    }
+    
+    const info = createEl("div", "output-item-info");
+    const name = createEl("div", "output-item-name", output.name);
+    const size = createEl("div", "output-item-size", formatSize(output.size));
+    info.appendChild(name);
+    info.appendChild(size);
+    
+    item.appendChild(icon);
+    item.appendChild(info);
+    
+    // Click to download/view
+    item.onclick = () => {
+        const url = `/api/sessions/${currentSession}/outputs/${encodeURIComponent(output.name)}`;
+        window.open(url, '_blank');
+    };
+    
+    return item;
 }
 
 async function deleteAssets() {

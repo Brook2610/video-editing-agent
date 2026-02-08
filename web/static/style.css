@@ -405,16 +405,36 @@ textarea {
   flex-direction: column;
 }
 
-.assets-header {
+/* Assets Section (Top 70%) */
+.assets-section {
+  flex: 7;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Output Section (Bottom 30%) */
+.output-section {
+  flex: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.assets-header,
+.output-header {
   padding: var(--space-md);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   justify-content: space-between;
   align-items: center;
   min-height: 60px;
+  flex-shrink: 0;
 }
 
-.assets-header h3 {
+.assets-header h3,
+.output-header h3 {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
@@ -436,12 +456,69 @@ textarea {
   align-content: start;
   position: relative;
   transition: background-color 0.2s ease;
+  min-height: 0;
 }
 
 .assets-list.drag-over {
   background-color: rgba(99, 102, 241, 0.05);
   outline: 2px dashed var(--accent-primary);
   outline-offset: -8px;
+}
+
+/* Output List */
+.output-list {
+  flex: 1;
+  padding: var(--space-md);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* Output Item */
+.output-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.output-item:hover {
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.output-item i {
+  width: 20px;
+  height: 20px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.output-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.output-item-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.output-item-size {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
 }
 
 /* Enhanced Asset Card */

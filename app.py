@@ -39,6 +39,11 @@ def _assets_dir(session_id: str) -> Path:
     return _session_dir(session_id) / "public" / "assets"
 
 
+def _outputs_dir(session_id: str) -> Path:
+    """Returns the out directory where Remotion renders videos."""
+    return _session_dir(session_id) / "out"
+
+
 def _ensure_session(session_id: str) -> Path:
     session_dir = _session_dir(session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -104,6 +109,20 @@ def _list_assets(session_id: str) -> List[Dict[str, Any]]:
     return sorted(results, key=lambda item: item["name"])
 
 
+def _list_outputs(session_id: str) -> List[Dict[str, Any]]:
+    outputs = _outputs_dir(session_id)
+    if not outputs.exists():
+        return []
+    results: List[Dict[str, Any]] = []
+    for path in outputs.rglob("*"):
+        if path.is_file():
+            results.append({
+                "name": str(path.relative_to(outputs)),
+                "size": path.stat().st_size,
+            })
+    return sorted(results, key=lambda item: item["name"])
+
+
 def _save_upload(session_id: str, upload: UploadFile) -> Path:
     _ensure_session(session_id)
     assets = _assets_dir(session_id)
@@ -144,6 +163,11 @@ def get_messages(session_id: str) -> JSONResponse:
 @app.get("/api/sessions/{session_id}/assets")
 def get_assets(session_id: str) -> JSONResponse:
     return JSONResponse({"assets": _list_assets(session_id)})
+
+
+@app.get("/api/sessions/{session_id}/outputs")
+def get_outputs(session_id: str) -> JSONResponse:
+    return JSONResponse({"outputs": _list_outputs(session_id)})
 
 
 @app.get("/api/sessions/{session_id}/assets/{filename:path}")
@@ -205,6 +229,26 @@ def send_message(
     )
 
     return JSONResponse({"reply": response_text})
+
+
+@app.get("/api/sessions/{session_id}/outputs/{filename:path}")
+def get_output_file(session_id: str, filename: str) -> Any:
+    outputs_dir = _outputs_dir(session_id)
+    file_path = (outputs_dir / filename).resolve()
+    if not str(file_path).startswith(str(outputs_dir.resolve())):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    if not file_path.exists():
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    
+    # Add proper headers for video streaming
+    return FileResponse(
+        file_path,
+        media_type="video/mp4" if file_path.suffix.lower() in ['.mp4', '.mov'] else None,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600"
+        }
+    )
 
 
 @app.post("/api/sessions/{session_id}/assets/delete")

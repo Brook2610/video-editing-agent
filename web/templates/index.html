@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Editing Agent</title>
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/style.css?v=10">
+    <link rel="stylesheet" href="/static/style.css?v=12">
     <!-- Markdown CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown-dark.min.css">
     <!-- Icons (CDN) -->
@@ -54,22 +54,35 @@
 
                 <!-- Assets Panel -->
                 <aside class="assets-pane">
-                    <div class="assets-header">
-                        <h3>Assets</h3>
-                        <div class="assets-actions">
-                            <!-- Hidden File Input -->
-                            <input type="file" id="asset-upload" multiple hidden>
-                            
-                            <button id="add-asset" class="btn-icon" title="Add Assets" onclick="document.getElementById('asset-upload').click()">
-                                <i data-lucide="plus"></i>
-                            </button>
-                            <button id="delete-assets" class="btn-icon" title="Delete Selected">
-                                <i data-lucide="trash-2"></i>
-                            </button>
+                    <!-- Assets Section -->
+                    <div class="assets-section">
+                        <div class="assets-header">
+                            <h3>Assets</h3>
+                            <div class="assets-actions">
+                                <!-- Hidden File Input -->
+                                <input type="file" id="asset-upload" multiple hidden>
+                                
+                                <button id="add-asset" class="btn-icon" title="Add Assets" onclick="document.getElementById('asset-upload').click()">
+                                    <i data-lucide="plus"></i>
+                                </button>
+                                <button id="delete-assets" class="btn-icon" title="Delete Selected">
+                                    <i data-lucide="trash-2"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="assets-list" id="assets-list">
+                            <!-- Assets loaded via JS -->
                         </div>
                     </div>
-                    <div class="assets-list" id="assets-list">
-                        <!-- Assets loaded via JS -->
+                    
+                    <!-- Output Section -->
+                    <div class="output-section">
+                        <div class="output-header">
+                            <h3>Output</h3>
+                        </div>
+                        <div class="output-list" id="output-list">
+                            <!-- Output files loaded via JS -->
+                        </div>
                     </div>
                 </aside>
             </div>
@@ -79,7 +92,7 @@
     <!-- Marked.js for Markdown (load before app.js) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
     <!-- Application Logic -->
-    <script src="/static/app.js?v=9"></script>
+    <script src="/static/app.js?v=11"></script>
     <script>
         // Initialize icons if script loaded
         if (window.lucide) {
