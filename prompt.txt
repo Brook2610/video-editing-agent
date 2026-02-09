@@ -52,9 +52,10 @@ Skills are reusable instruction files that give you specialized knowledge and wo
 - `run_terminal(command="...", cwd=".")` - Execute shell commands.
 - `get_asset_info(asset_path="...")` - Get video/audio metadata (duration, resolution, codec).
 - `inspect_asset(asset_path="...", prompt="...")` - Ask Gemini to analyze and describe an asset with timestamps.
+- `set_view_asset(asset_path="...", timestamp=...)` - Open an asset in the UI View tab (timestamp can be MM:SS) when you need to show the user something specific. Only one at a time
 
 ## Critical Rules
-1. **Read skills first** - Use `read_file(path="skills/...")` to learn patterns before coding.
+1. **Read appropriete skills first** - Use `read_file(path="skills/...")` to learn patterns before coding.
 2. **ALWAYS analyze assets before planning** - Use both `get_asset_info` and `inspect_asset`.
 3. **ALWAYS write an edit plan** - Document your plan in `EDIT_PLAN.md`.
 4. **ALWAYS export the video** - The task is complete ONLY when the video is successfully rendered.

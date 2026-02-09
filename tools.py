@@ -86,6 +86,9 @@ def _asset_dir(project: str) -> Path:
     return _safe_project_path(str(Path(project) / "assets"))
 
 
+from events import emit
+
+
 def list_files(path: str = ".", pattern: str = "*", recursive: bool = True) -> List[str]:
     try:
         base = _safe_project_path(path)
@@ -522,6 +525,64 @@ def inspect_asset(asset_path: str, prompt: str = "") -> str:
     return response.text or ""
 
 
+def _parse_timestamp(value: Optional[object]) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if ":" in text:
+            parts = [p for p in text.split(":") if p != ""]
+            if len(parts) == 2:
+                minutes, seconds = parts
+                return float(minutes) * 60 + float(seconds)
+            if len(parts) == 3:
+                hours, minutes, seconds = parts
+                return float(hours) * 3600 + float(minutes) * 60 + float(seconds)
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
+
+
+def set_view_asset(asset_path: str, timestamp: Optional[object] = None) -> Dict[str, Any]:
+    """Request the UI to open an asset in View mode (optionally at a timestamp)."""
+    try:
+        target = _safe_project_path(asset_path)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    if not target.exists() or not target.is_file():
+        return {"error": f"Asset not found: {asset_path}"}
+
+    project_id = ctx_project_id.get()
+    assets_dir = (PROJECTS_ROOT / project_id / "public" / "assets").resolve()
+    outputs_dir = (PROJECTS_ROOT / project_id / "out").resolve()
+
+    payload: Dict[str, Any] = {
+        "updated": int(time.time() * 1000),
+        "timestamp": _parse_timestamp(timestamp),
+    }
+
+    if str(target).startswith(str(outputs_dir)):
+        rel = str(target.relative_to(outputs_dir)).replace("\\", "/")
+        payload.update({"kind": "output", "path": rel})
+    elif str(target).startswith(str(assets_dir)):
+        rel = str(target.relative_to(assets_dir)).replace("\\", "/")
+        payload.update({"kind": "asset", "path": rel})
+    else:
+        return {"error": "Asset must be inside public/assets or out directory"}
+
+    ok = emit(project_id, "view", payload)
+    if not ok:
+        return {"error": "Failed to emit view event (event loop not ready)"}
+    return {"success": True, **payload}
+
+
 def get_tools() -> List[ToolSpec]:
     return [
         ToolSpec(
@@ -646,5 +707,18 @@ def get_tools() -> List[ToolSpec]:
                 "required": ["asset_path"],
             },
             handler=inspect_asset,
+        ),
+        ToolSpec(
+            name="set_view_asset",
+            description="Open an asset in the UI View tab. Optionally include a timestamp (seconds) for videos.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "asset_path": {"type": "string", "description": "Path to asset inside public/assets or out (e.g. 'public/assets/clip.mp4' or 'out/video.mp4')"},
+                    "timestamp": {"type": "string", "description": "Optional start time (MM:SS or seconds) for videos"},
+                },
+                "required": ["asset_path"],
+            },
+            handler=set_view_asset,
         ),
     ]

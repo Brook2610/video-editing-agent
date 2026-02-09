@@ -4,15 +4,17 @@ import json
 import os
 import re
 from datetime import datetime
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from agent import run_agent
+import events
 from tools import PROJECTS_ROOT
 
 # Initialize App
@@ -23,6 +25,11 @@ WEB_DIR = BASE_DIR / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    events.set_loop(asyncio.get_running_loop())
 
 # Helper Functions
 def _sanitize_session(name: str) -> str:
@@ -94,6 +101,17 @@ def _read_messages(session_id: str) -> List[Dict[str, Any]]:
             text = "\n".join([p for p in text_parts if p])
         else:
             text = str(content)
+        if role in {"human", "user"}:
+            lines = text.splitlines()
+            extracted: List[str] = []
+            for line in lines:
+                if line.startswith("User request:"):
+                    extracted.append(line.replace("User request:", "", 1).strip())
+                elif line.startswith("Project name:"):
+                    continue
+                else:
+                    extracted.append(line)
+            text = "\n".join([line for line in extracted if line]).strip()
         if not text.strip():
             continue
         messages.append({"role": role, "text": text})
@@ -175,6 +193,15 @@ def get_assets(session_id: str) -> JSONResponse:
 @app.get("/api/sessions/{session_id}/outputs")
 def get_outputs(session_id: str) -> JSONResponse:
     return JSONResponse({"outputs": _list_outputs(session_id)})
+
+
+@app.get("/api/sessions/{session_id}/events")
+def stream_events(session_id: str) -> StreamingResponse:
+    return StreamingResponse(
+        events.stream(session_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/api/sessions/{session_id}/assets/{filename:path}")

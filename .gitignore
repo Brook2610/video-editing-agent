@@ -9,3 +9,5 @@ ENV/
 projects/
 node_modules/
 .DS_Store
+VM_SETUP_CONTEXT.md
+references.md

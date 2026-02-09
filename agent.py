@@ -308,13 +308,13 @@ def _build_initial_message(
     request: str,
     video_source: str,
     assets: Optional[List[str]] = None,
+    include_project_header: bool = False,
 ) -> HumanMessage:
     asset_names = [Path(a).name for a in (assets or [])]
-    user_text = (
-        f"Project name: {project}\n"
-        f"User request: {request}\n"
-        + (f"Attached assets: {', '.join(asset_names)}\n" if asset_names else "")
-    )
+    header = f"Project name: {project}\n" if include_project_header else ""
+    user_text = header + request.strip() + "\n"
+    if asset_names:
+        user_text += f"Attached assets: {', '.join(asset_names)}\n"
     parts: List[Dict[str, Any]] = []
     inline_assets: List[str] = []
     large_assets: List[str] = []
@@ -413,7 +413,17 @@ def run_agent(
 
     messages: List[Any] = [SystemMessage(content=system_prompt)]
     messages.extend(memory_messages)
-    messages.append(_build_initial_message(client, project, request, video_source, assets=assets))
+    include_project_header = len(memory_messages) == 0
+    messages.append(
+        _build_initial_message(
+            client,
+            project,
+            request,
+            video_source,
+            assets=assets,
+            include_project_header=include_project_header,
+        )
+    )
 
     graph = _build_graph(llm, tools)
     state = {"messages": messages, "step": 0, "max_steps": max_steps}

@@ -3,6 +3,7 @@ let currentSession = null;
 let viewMode = false;
 let lastTimeInsert = null;
 let currentViewAssetName = "";
+let eventSource = null;
 
 // DOM Elements
 const els = {
@@ -526,6 +527,11 @@ async function selectSession(id) {
     // Reset view when switching projects
     viewMode = false;
     currentViewAssetName = "";
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    
     els.chatPane.style.display = 'flex';
     els.viewPane.style.display = 'none';
     els.viewContent.innerHTML = `
@@ -545,6 +551,7 @@ async function selectSession(id) {
     });
     
     await Promise.all([loadMessages(), loadAssets(), loadOutputs()]);
+    startEventStream();
 }
 
 async function loadMessages() {
@@ -747,6 +754,32 @@ async function loadOutputs() {
     }
 }
 
+function startEventStream() {
+    if (!currentSession) return;
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(`/api/sessions/${currentSession}/events`);
+    eventSource.addEventListener('view', (evt) => {
+        try {
+            const payload = JSON.parse(evt.data || "{}");
+            const view = payload.data || {};
+            const path = view.path || "";
+            const ext = path.split('.').pop().toLowerCase();
+            const isVideo = ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext);
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
+            if (!isVideo && !isImage) return;
+
+            const url = view.kind === 'output'
+                ? `/api/sessions/${currentSession}/outputs/${encodeURIComponent(path)}?t=${Date.now()}`
+                : `/api/sessions/${currentSession}/assets/${encodeURIComponent(path)}?t=${Date.now()}`;
+
+            currentViewAssetName = path.split('/').pop() || path;
+            const delayMs = isVideo ? 1000 : 0;
+            openInViewMode(url, isVideo ? 'video' : 'image', view.timestamp, delayMs);
+        } catch (e) {
+            console.warn('Event parse failed', e);
+        }
+    });
+}
 function renderOutputItem(output) {
     const item = createEl("div", "output-item");
     
@@ -789,6 +822,8 @@ function renderOutputItem(output) {
 }
 
 function openInViewMode(url, type) {
+    const startTime = arguments.length > 2 ? arguments[2] : null;
+    const delayMs = arguments.length > 3 ? arguments[3] : 0;
     // Switch to view mode
     viewMode = true;
     els.chatPane.style.display = 'none';
@@ -825,7 +860,26 @@ function openInViewMode(url, type) {
         video.src = url;
         video.className = 'view-media video';
         video.controls = false;
-        video.autoplay = true;
+        video.autoplay = false;
+        if (startTime !== null && !Number.isNaN(Number(startTime))) {
+            const seekTo = Number(startTime);
+            video.addEventListener('loadedmetadata', () => {
+                const target = Math.max(0, Math.min(video.duration || seekTo, seekTo));
+                video.currentTime = target;
+            });
+        }
+        const startPlayback = () => {
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+        };
+        video.addEventListener('loadedmetadata', () => {
+            if (delayMs > 0) {
+                setTimeout(startPlayback, delayMs);
+            } else {
+                startPlayback();
+            }
+        });
         wrap.appendChild(video);
         container.appendChild(wrap);
         container.appendChild(buildVideoControls(video));
@@ -935,7 +989,29 @@ if(els.messageViewInput) {
     };
 }
 
+document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    if (!viewMode) return;
+    const active = document.activeElement;
+    if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
+        return;
+    }
+    const video = els.viewContent ? els.viewContent.querySelector('video') : null;
+    if (!video) return;
+    e.preventDefault();
+    if (video.paused) {
+        video.play().catch(() => {});
+    } else {
+        video.pause();
+    }
+});
+
 // Init - Load sessions when page loads
 document.addEventListener('DOMContentLoaded', () => {
     loadSessions();
+    startEventStream();
 });
+
+
+
+
