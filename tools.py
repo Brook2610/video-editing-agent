@@ -385,14 +385,27 @@ def run_terminal(command: str, cwd: str = ".", timeout: int = 120) -> str:
     if not workdir.exists() or not workdir.is_dir():
         return f"Working directory not found: {cwd}"
 
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", command],
+    def _run(cmd: List[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            cmd,
             cwd=str(workdir),
             capture_output=True,
             text=True,
             timeout=timeout,
         )
+
+    try:
+        # Prefer PowerShell on Windows, fallback to bash on Unix.
+        if os.name == "nt":
+            result = _run(["powershell", "-NoProfile", "-Command", command])
+        else:
+            result = _run(["/bin/bash", "-lc", command])
+    except FileNotFoundError:
+        # Fallback if the preferred shell isn't available.
+        try:
+            result = _run(["/bin/sh", "-lc", command])
+        except Exception as exc:
+            return f"Command failed to run: {exc}"
     except subprocess.TimeoutExpired:
         return f"Command timed out after {timeout}s"
     except Exception as exc:

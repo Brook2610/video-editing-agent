@@ -79,8 +79,11 @@ def _read_messages(session_id: str) -> List[Dict[str, Any]]:
         return []
 
     messages: List[Dict[str, Any]] = []
+    allowed_roles = {"human", "user", "ai", "assistant"}
     for msg in items:
         role = msg.get("type") or msg.get("role") or "ai"
+        if role not in allowed_roles:
+            continue
         payload = msg.get("data", {}) if isinstance(msg, dict) else {}
         content = payload.get("content", "")
         if isinstance(content, list):
@@ -91,6 +94,8 @@ def _read_messages(session_id: str) -> List[Dict[str, Any]]:
             text = "\n".join([p for p in text_parts if p])
         else:
             text = str(content)
+        if not text.strip():
+            continue
         messages.append({"role": role, "text": text})
     return messages
 

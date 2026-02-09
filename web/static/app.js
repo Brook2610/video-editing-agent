@@ -2,6 +2,7 @@
 let currentSession = null;
 let viewMode = false;
 let lastTimeInsert = null;
+let currentViewAssetName = "";
 
 // DOM Elements
 const els = {
@@ -63,12 +64,20 @@ function insertTimecode(input, timeText) {
     const value = input.value || "";
     const selectionStart = input.selectionStart ?? value.length;
     const selectionEnd = input.selectionEnd ?? value.length;
+    const label = currentViewAssetName ? `[${currentViewAssetName} ${timeText}]` : `[${timeText}]`;
 
     if (lastTimeInsert && lastTimeInsert.input === input && (now - lastTimeInsert.timestamp) <= 4000) {
         const startIndex = lastTimeInsert.index;
         const endIndex = startIndex + lastTimeInsert.timeText.length;
         if (value.slice(startIndex, endIndex) === lastTimeInsert.timeText) {
-            const rangeText = `${lastTimeInsert.timeText}-${timeText}`;
+            const sameFile = (lastTimeInsert.fileName || "") === (currentViewAssetName || "");
+            const rangeText = sameFile && currentViewAssetName
+                ? `[${currentViewAssetName} (${lastTimeInsert.rawTimeText} - ${timeText})]`
+                : sameFile
+                    ? `[(${lastTimeInsert.rawTimeText} - ${timeText})]`
+                    : currentViewAssetName
+                        ? `[${currentViewAssetName} ${timeText}]`
+                        : `[${timeText}]`;
             input.value = value.slice(0, startIndex) + rangeText + value.slice(endIndex);
             const cursorPos = startIndex + rangeText.length;
             input.selectionStart = cursorPos;
@@ -83,7 +92,7 @@ function insertTimecode(input, timeText) {
     const needsSuffixSpace = selectionEnd < value.length && !/\s/.test(value[selectionEnd]);
     const prefix = needsPrefixSpace ? " " : "";
     const suffix = needsSuffixSpace ? " " : "";
-    const insertText = `${prefix}${timeText}${suffix}`;
+    const insertText = `${prefix}${label}${suffix}`;
 
     input.value = value.slice(0, selectionStart) + insertText + value.slice(selectionEnd);
     const cursorPos = selectionStart + insertText.length;
@@ -92,7 +101,9 @@ function insertTimecode(input, timeText) {
 
     lastTimeInsert = {
         input,
-        timeText,
+        timeText: label,
+        rawTimeText: timeText,
+        fileName: currentViewAssetName || "",
         index: selectionStart + prefix.length,
         timestamp: now
     };
@@ -386,6 +397,7 @@ function renderAssetCard(asset) {
         // Double-click to view
         preview.addEventListener('dblclick', (e) => {
             e.stopPropagation();
+            currentViewAssetName = fileName;
             openInViewMode(assetUrl, 'image');
         });
     } else if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
@@ -427,6 +439,7 @@ function renderAssetCard(asset) {
         // Double-click to view
         preview.addEventListener('dblclick', (e) => {
             e.stopPropagation();
+            currentViewAssetName = fileName;
             openInViewMode(assetUrl, 'video');
         });
     } else {
@@ -509,6 +522,19 @@ async function loadSessions() {
 async function selectSession(id) {
     currentSession = id;
     if(els.sessionTitle) els.sessionTitle.textContent = id;
+
+    // Reset view when switching projects
+    viewMode = false;
+    currentViewAssetName = "";
+    els.chatPane.style.display = 'flex';
+    els.viewPane.style.display = 'none';
+    els.viewContent.innerHTML = `
+        <div class="view-placeholder">
+            <i data-lucide="image"></i>
+            <p>Double-click any image or video to view</p>
+        </div>
+    `;
+    updateIcons();
     
     // Update active class in sidebar
     Array.from(els.sessionList.children).forEach(li => {
@@ -752,6 +778,7 @@ function renderOutputItem(output) {
         const timestamp = Date.now();
         const url = `/api/sessions/${currentSession}/outputs/${encodeURIComponent(output.name)}?t=${timestamp}`;
         if (isVideo || isImage) {
+            currentViewAssetName = output.name;
             openInViewMode(url, isVideo ? 'video' : 'image');
         } else {
             window.open(url, '_blank');
@@ -780,20 +807,27 @@ function openInViewMode(url, type) {
     els.viewContent.innerHTML = '';
     
     if (type === 'image') {
+        const wrap = document.createElement('div');
+        wrap.className = 'view-media-wrap';
         const img = document.createElement('img');
         img.src = url;
         img.className = 'view-media image';
-        els.viewContent.appendChild(img);
+        wrap.appendChild(img);
+        els.viewContent.appendChild(wrap);
     } else if (type === 'video') {
         const container = document.createElement('div');
         container.className = 'view-video-container';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'view-media-wrap';
 
         const video = document.createElement('video');
         video.src = url;
         video.className = 'view-media video';
         video.controls = false;
         video.autoplay = true;
-        container.appendChild(video);
+        wrap.appendChild(video);
+        container.appendChild(wrap);
         container.appendChild(buildVideoControls(video));
         els.viewContent.appendChild(container);
     }

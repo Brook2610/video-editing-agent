@@ -64,12 +64,13 @@ body, html {
 }
 
 .sidebar-header {
-  padding: var(--space-md);
+  height: 60px;
+  padding: 0 var(--space-md);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 60px;
+  flex-shrink: 0;
 }
 
 .sidebar-header h2 {
@@ -295,6 +296,7 @@ body, html {
   justify-content: stretch;
   overflow: hidden;
   position: relative;
+  min-height: 0;
 }
 
 .view-placeholder {
@@ -328,6 +330,16 @@ body, html {
   height: 100%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.view-media-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .timeline-tooltip {
@@ -502,9 +514,10 @@ body, html {
 }
 
 .view-media.video {
-  width: 100%;
+  width: auto;
   height: auto;
-  flex: 1;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .chat-history {
@@ -517,27 +530,30 @@ body, html {
 }
 
 .message {
-  max-width: 85%;
+  max-width: 78%;
   padding: 14px 18px;
-  border-radius: var(--radius-md);
+  border-radius: 14px;
   font-size: 14px;
   line-height: 1.6;
   word-wrap: break-word;
+  border: 1px solid transparent;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
 .message.user {
   align-self: flex-end;
-  background-color: var(--accent-primary);
+  background: linear-gradient(135deg, #5b5ff5 0%, #6e55f6 100%);
   color: var(--accent-text);
-  border-bottom-right-radius: 2px;
+  border-color: rgba(255, 255, 255, 0.1);
+  border-bottom-right-radius: 6px;
 }
 
 .message.ai {
   align-self: flex-start;
-  background-color: var(--bg-panel);
+  background: linear-gradient(180deg, rgba(41, 41, 46, 0.95) 0%, rgba(34, 34, 39, 0.95) 100%);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  border-bottom-left-radius: 2px;
+  border-color: rgba(255, 255, 255, 0.06);
+  border-bottom-left-radius: 6px;
 }
 
 /* Markdown styling for AI messages */
