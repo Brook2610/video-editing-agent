@@ -334,10 +334,10 @@ function renderMessage(role, text) {
     const div = createEl("div", `message ${role}`);
     
     if (role === 'ai') {
-        // Render markdown for AI messages
-        div.classList.add('markdown-body');
+        const content = document.createElement("div");
+        content.className = "ai-content markdown-body";
         try {
-            div.innerHTML = marked.parse(text, {
+            content.innerHTML = marked.parse(text, {
                 breaks: true,
                 gfm: true,
                 headerIds: false,
@@ -345,8 +345,21 @@ function renderMessage(role, text) {
             });
         } catch (e) {
             console.error('Markdown parse error:', e);
-            div.innerText = text;
+            content.innerText = text;
         }
+        const iconWrap = document.createElement("span");
+        iconWrap.className = "ai-icon";
+        iconWrap.innerHTML = `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="6" width="18" height="12" rx="2"></rect>
+              <path d="M7 6l2-2h2l-2 2H7zm6 0l2-2h2l-2 2h-2zm-6 12l2 2h2l-2-2H7zm6 0l2 2h2l-2-2h-2z"></path>
+              <circle cx="9" cy="12" r="1.3"></circle>
+              <circle cx="15" cy="12" r="1.3"></circle>
+            </svg>
+        `;
+        div.appendChild(iconWrap);
+        div.appendChild(content);
+        updateIcons();
     } else {
         // Plain text for user messages
         div.innerText = text;
