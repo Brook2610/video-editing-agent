@@ -13,6 +13,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import shutil
+
 from agent import run_agent
 import events
 from tools import PROJECTS_ROOT
@@ -21,6 +23,7 @@ from tools import PROJECTS_ROOT
 app = FastAPI(title="Video Editing Agent")
 
 BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = BASE_DIR / "templates" / "remotion-base"
 WEB_DIR = BASE_DIR / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
@@ -55,7 +58,23 @@ def _ensure_session(session_id: str) -> Path:
     session_dir = _session_dir(session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     _assets_dir(session_id).mkdir(parents=True, exist_ok=True)
+    _scaffold_project(session_dir)
     return session_dir
+
+
+def _scaffold_project(session_dir: Path) -> None:
+    """Copy Remotion template files to project if package.json doesn't exist."""
+    if (session_dir / "package.json").exists():
+        return
+    if not TEMPLATES_DIR.exists():
+        return
+    for item in TEMPLATES_DIR.rglob("*"):
+        if item.is_file():
+            rel = item.relative_to(TEMPLATES_DIR)
+            target = session_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                shutil.copy2(item, target)
 
 
 def _list_sessions() -> List[str]:
