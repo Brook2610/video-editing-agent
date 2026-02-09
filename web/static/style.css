@@ -682,6 +682,11 @@ body, html {
 .message.ai .ai-content {
   flex: 1;
   min-width: 0;
+  text-align: left;
+  word-spacing: normal;
+  letter-spacing: normal;
+  text-justify: auto;
+  white-space: normal;
 }
 
 /* Markdown styling for AI messages */
