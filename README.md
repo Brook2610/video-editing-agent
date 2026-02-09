@@ -38,3 +38,45 @@ Open: http://localhost:8000
 - Project files live under `projects/` (git-ignored).
 - Assets live in `projects/<session>/public/assets`.
 - Outputs live in `projects/<session>/out`.
+
+---
+
+# Video Editor Agent - Project Story
+
+## Inspiration
+- Cawd Bot (OpenClaw) and Remotion showed what was possible.
+- Real editing pain: slow manual cuts, repetitive motion-graphics work, and too many tool switches.
+
+## What it does
+- Edits videos using a Gemini-powered agent.
+- Accepts a natural-language request, plans the edit, writes Remotion code, and renders outputs.
+
+## How we built it
+- **Gemini 3 for coding** for the core agent reasoning and coding. It drives the workflow end-to-end:
+	- Plans editing steps and timelines.
+	- Generates Remotion React components.
+	- Fixes issues and retries renders when needed.
+- **Multimodal Gemini** capabilities for understanding video, image, and audio inputs:
+	- Video analysis for scene understanding and key moments.
+	- Image inspection for overlays, graphics, and style cues.
+	- Audio inspection for timing and pacing.
+- **LangChain + LangGraph** for orchestration, tool calling, and structured agent loops.
+- **Remotion** as the video engine, producing consistent, programmable edits.
+- **Google Cloud VM** to run the service with stable compute and fast deployment.
+
+## Challenges we ran into
+- Rendering can be slow depending on complexity, assets, and machine load.
+- Occasional model load hiccups (Gemini availability or cold-start latency).
+
+## Accomplishments that we're proud of
+- A clean, usable web interface that makes editing approachable.
+- The agent can generate and render complete videos from a single prompt.
+
+## What we learned
+- Gemini's multimodal understanding is strong for video, image, and audio context.
+- Prompt and context engineering matters a lot for consistent editing results.
+
+## What's next for Video Editor Agent
+- Expand tooling and skills for more editing styles and effects.
+- Improve reliability and speed for rendering.
+- Collaborate directly with video editors to refine the workflow.
