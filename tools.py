@@ -394,6 +394,8 @@ def run_terminal(command: str, cwd: str = ".", timeout: int = 120) -> str:
             cwd=str(workdir),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
         )
 
