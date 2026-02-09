@@ -37,7 +37,7 @@ function createEl(tag, className, text) {
 }
 
 function updateIcons() {
-    if (window.lucide) window.lucide.createIcons();
+    // Phosphor icons are auto-rendered via CSS classes, no init needed
 }
 
 function formatSize(bytes) {
@@ -132,7 +132,7 @@ function buildVideoControls(videoEl) {
     playBtn.type = 'button';
     playBtn.className = 'control-btn';
     const playIcon = document.createElement('i');
-    playIcon.setAttribute('data-lucide', 'play');
+    playIcon.className = 'ph ph-play';
     playBtn.appendChild(playIcon);
 
     const timeLabel = document.createElement('span');
@@ -167,7 +167,7 @@ function buildVideoControls(videoEl) {
     muteBtn.type = 'button';
     muteBtn.className = 'control-btn';
     const muteIcon = document.createElement('i');
-    muteIcon.setAttribute('data-lucide', 'volume-2');
+    muteIcon.className = 'ph ph-speaker-high';
     muteBtn.appendChild(muteIcon);
 
     const volume = document.createElement('input');
@@ -182,7 +182,7 @@ function buildVideoControls(videoEl) {
     fullscreenBtn.type = 'button';
     fullscreenBtn.className = 'control-btn';
     const fsIcon = document.createElement('i');
-    fsIcon.setAttribute('data-lucide', 'fullscreen');
+    fsIcon.className = 'ph ph-corners-out';
     fullscreenBtn.appendChild(fsIcon);
 
     right.appendChild(muteBtn);
@@ -209,9 +209,8 @@ function buildVideoControls(videoEl) {
     const setButtonIcon = (btn, name) => {
         btn.innerHTML = '';
         const icon = document.createElement('i');
-        icon.setAttribute('data-lucide', name);
+        icon.className = `ph ph-${name}`;
         btn.appendChild(icon);
-        updateIcons();
     };
 
     const updatePlayIcon = () => {
@@ -219,7 +218,7 @@ function buildVideoControls(videoEl) {
     };
 
     const updateMuteIcon = () => {
-        setButtonIcon(muteBtn, videoEl.muted ? 'volume-x' : 'volume-2');
+        setButtonIcon(muteBtn, videoEl.muted ? 'speaker-x' : 'speaker-high');
     };
 
     const hasAudioTrack = () => {
@@ -361,8 +360,8 @@ function renderSessionItem(name, isActive) {
     const li = createEl("li", `session-item ${isActive ? 'active' : ''}`);
     
     const icon = document.createElement("i");
-    icon.setAttribute("data-lucide", "folder"); // Standard folder icon
-    icon.style.width = "16px";
+    icon.className = "ph ph-folder-simple";
+    icon.style.fontSize = "16px";
     
     const span = createEl("span", "", name);
     
@@ -423,9 +422,8 @@ function renderAssetCard(asset) {
             // Fallback to icon on error
             preview.innerHTML = '';
             const icon = document.createElement("i");
-            icon.setAttribute("data-lucide", "video");
+            icon.className = "ph ph-video-camera";
             preview.appendChild(icon);
-            updateIcons();
         });
         
         video.onmouseenter = () => {
@@ -447,10 +445,10 @@ function renderAssetCard(asset) {
     } else {
         // Fallback Icon
         const icon = document.createElement("i");
-        let iconName = "file";
-        if (['mp3', 'wav', 'aac'].includes(ext)) iconName = "music";
+        let iconClass = "ph ph-file";
+        if (['mp3', 'wav', 'aac'].includes(ext)) iconClass = "ph ph-music-note";
         
-        icon.setAttribute("data-lucide", iconName);
+        icon.className = iconClass;
         preview.appendChild(icon);
     }
     
@@ -489,7 +487,7 @@ function createUploadPlaceholder(file) {
 
     const preview = createEl("div", "asset-preview");
     const icon = document.createElement("i");
-    icon.setAttribute("data-lucide", "upload");
+    icon.className = "ph ph-cloud-arrow-up";
     preview.appendChild(icon);
 
     const info = createEl("div", "asset-info");
@@ -575,7 +573,7 @@ async function selectSession(id) {
     els.viewPane.style.display = 'none';
     els.viewContent.innerHTML = `
         <div class="view-placeholder">
-            <i data-lucide="image"></i>
+            <i class="ph ph-image" style="font-size:48px;"></i>
             <p>Double-click any image or video to view</p>
         </div>
     `;
@@ -611,7 +609,7 @@ async function loadAssets() {
     els.assetsList.innerHTML = "";
     
     if (data.assets.length === 0) {
-        const empty = createEl("div", "", "No assets yet. Drag & drop files here.");
+        const empty = createEl("div", "assets-empty", "No assets yet. Drag & drop files here.");
         empty.style.color = "var(--text-muted)";
         empty.style.fontSize = "12px";
         empty.style.textAlign = "center";
@@ -852,11 +850,11 @@ function renderOutputItem(output) {
     const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
     
     if (isVideo) {
-        icon.setAttribute("data-lucide", "video");
+        icon.className = "ph ph-video-camera";
     } else if (['mp3', 'wav', 'aac'].includes(ext)) {
-        icon.setAttribute("data-lucide", "music");
+        icon.className = "ph ph-music-note";
     } else {
-        icon.setAttribute("data-lucide", "file");
+        icon.className = "ph ph-file";
     }
     
     const info = createEl("div", "output-item-info");
