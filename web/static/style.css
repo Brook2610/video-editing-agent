@@ -704,26 +704,38 @@ body, html {
 .message.ai .ai-content.markdown-body h3,
 .message.ai .ai-content.markdown-body h4,
 .message.ai .ai-content.markdown-body h5,
-.message.ai .ai-content.markdown-body h6 {
+.message.ai .ai-content.markdown-body h6,
+.message.ai h1,
+.message.ai h2,
+.message.ai h3,
+.message.ai h4,
+.message.ai h5,
+.message.ai h6 {
   color: #c7b9ff;
   border-bottom: none;
   margin-top: 16px;
   margin-bottom: 8px;
   font-weight: 600;
   letter-spacing: 0.2px;
+  text-shadow: 0 0 12px rgba(124, 110, 240, 0.35);
 }
 
-.message.ai .ai-content.markdown-body h1 { font-size: 1.6em; color: #e1c6ff; }
-.message.ai .ai-content.markdown-body h2 { font-size: 1.35em; color: #a8c7ff; }
-.message.ai .ai-content.markdown-body h3 { font-size: 1.2em; color: #f1a7c8; }
+.message.ai .ai-content.markdown-body h1,
+.message.ai h1 { font-size: 1.6em; color: #e1c6ff; }
+.message.ai .ai-content.markdown-body h2,
+.message.ai h2 { font-size: 1.35em; color: #a8c7ff; border-bottom: 1px solid rgba(124, 110, 240, 0.3); padding-bottom: 4px; }
+.message.ai .ai-content.markdown-body h3,
+.message.ai h3 { font-size: 1.2em; color: #f1a7c8; }
 
-.message.ai .ai-content.markdown-body p {
+.message.ai .ai-content.markdown-body p,
+.message.ai p {
   margin-top: 0;
   margin-bottom: 14px;
   color: #e3e3ee;
 }
 
-.message.ai .ai-content.markdown-body code {
+.message.ai .ai-content.markdown-body code,
+.message.ai code {
   background: linear-gradient(135deg, rgba(124, 110, 240, 0.18), rgba(244, 114, 182, 0.12));
   color: #f1d6ff;
   padding: 2px 6px;
@@ -732,7 +744,8 @@ body, html {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
 }
 
-.message.ai .ai-content.markdown-body pre {
+.message.ai .ai-content.markdown-body pre,
+.message.ai pre {
   background: linear-gradient(135deg, rgba(24, 20, 36, 0.95), rgba(28, 24, 42, 0.95));
   border: 1px solid rgba(124, 110, 240, 0.35);
   border-radius: 6px;
@@ -759,7 +772,8 @@ body, html {
   margin: 4px 0;
 }
 
-.message.ai .ai-content.markdown-body blockquote {
+.message.ai .ai-content.markdown-body blockquote,
+.message.ai blockquote {
   border-left: 3px solid rgba(244, 114, 182, 0.6);
   padding-left: 12px;
   margin: 12px 0;
@@ -771,21 +785,26 @@ body, html {
   padding-bottom: 8px;
 }
 
-.message.ai .ai-content.markdown-body a {
+.message.ai .ai-content.markdown-body a,
+.message.ai a {
   color: #b5b1ff;
   text-decoration: none;
 }
 
 .message.ai .ai-content.markdown-body ul,
-.message.ai .ai-content.markdown-body ol {
+.message.ai .ai-content.markdown-body ol,
+.message.ai ul,
+.message.ai ol {
   padding-left: 24px;
 }
 
-.message.ai .ai-content.markdown-body li {
+.message.ai .ai-content.markdown-body li,
+.message.ai li {
   margin: 6px 0;
 }
 
-.message.ai .ai-content.markdown-body li::marker {
+.message.ai .ai-content.markdown-body li::marker,
+.message.ai li::marker {
   color: #a78bfa;
 }
 
