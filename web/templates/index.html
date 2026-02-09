@@ -36,15 +36,24 @@
                     <span id="session-meta" class="meta"></span>
                 </div>
                 <div class="header-center">
-                    <div class="view-toggle-slider">
-                        <button class="toggle-option active" data-mode="chat">
-                            <i data-lucide="message-square"></i>
-                            <span>Chat</span>
-                        </button>
-                        <button class="toggle-option" data-mode="view">
-                            <i data-lucide="eye"></i>
-                            <span>View</span>
-                        </button>
+                    <div class="header-controls">
+                        <div class="view-toggle-slider">
+                            <button class="toggle-option active" data-mode="chat">
+                                <i data-lucide="message-square"></i>
+                                <span>Chat</span>
+                            </button>
+                            <button class="toggle-option" data-mode="view">
+                                <i data-lucide="eye"></i>
+                                <span>View</span>
+                            </button>
+                        </div>
+                        <div class="model-picker">
+                            <label for="model-select">Model</label>
+                            <select id="model-select">
+                                <option value="flash" selected>gemini-3-flash-preview</option>
+                                <option value="pro">gemini-3-pro-preview</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="header-actions">
@@ -126,7 +135,7 @@
     <!-- Marked.js for Markdown (load before app.js) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
     <!-- Application Logic -->
-    <script src="/static/app.js?v=14"></script>
+    <script src="/static/app.js?v=16"></script>
     <script>
         // Initialize icons if script loaded
         if (window.lucide) {

@@ -228,6 +228,7 @@ def get_asset_file(session_id: str, filename: str) -> Any:
 def send_message(
     session_id: str,
     message: str = Form(...),
+    model: Optional[str] = Form(None),
     asset_names: Optional[str] = Form(None),
     files: List[UploadFile] = File(default=[]),
 ) -> JSONResponse:
@@ -253,11 +254,17 @@ def send_message(
         if str(target).lower().startswith(str(assets_dir).lower()) and target.exists():
             saved_assets.append(str(target))
 
+    model_choice = (model or "flash").strip().lower()
+    if model_choice != "pro":
+        model_choice = "flash"
+    model_name = f"gemini-3-{model_choice}-preview"
+
+    print(f"[video-agent] Using model: {model_name}")
     response_text = run_agent(
         video_source="none",
         request=message,
         project=session_id,
-        model=os.getenv("GEMINI_MODEL", "gemini-3-flash-preview"),
+        model=model_name,
         max_steps=int(os.getenv("AGENT_MAX_STEPS", "100")),
         assets=saved_assets or None,
     )

@@ -23,6 +23,7 @@ const els = {
     sendViewBtn: document.getElementById("send-view"),
     messageInput: document.getElementById("message"),
     messageViewInput: document.getElementById("message-view"),
+    modelSelect: document.getElementById("model-select"),
     newSessionBtn: document.getElementById("new-session"),
     toggleOptions: document.querySelectorAll(".toggle-option")
 };
@@ -483,6 +484,44 @@ function renderAssetCard(asset) {
     return card;
 }
 
+function createUploadPlaceholder(file) {
+    const card = createEl("div", "asset-card asset-loading");
+
+    const preview = createEl("div", "asset-preview");
+    const icon = document.createElement("i");
+    icon.setAttribute("data-lucide", "upload");
+    preview.appendChild(icon);
+
+    const info = createEl("div", "asset-info");
+    const nameSpan = createEl("span", "asset-name", file.name || "Uploading...");
+    const sizeSpan = createEl("span", "asset-size", formatSize(file.size || 0));
+    info.appendChild(nameSpan);
+    info.appendChild(sizeSpan);
+
+    card.appendChild(preview);
+    card.appendChild(info);
+    return card;
+}
+
+function addUploadPlaceholders(files) {
+    if (!els.assetsList) return [];
+    const list = Array.from(files || []);
+    if (list.length === 0) return [];
+
+    if (!els.assetsList.querySelector(".asset-card")) {
+        els.assetsList.innerHTML = "";
+    }
+
+    const placeholders = [];
+    list.forEach((file) => {
+        const card = createUploadPlaceholder(file);
+        placeholders.push(card);
+        els.assetsList.appendChild(card);
+    });
+    updateIcons();
+    return placeholders;
+}
+
 // Logic
 async function loadSessions() {
     console.log('loadSessions called');
@@ -605,6 +644,8 @@ async function sendMessage() {
     // Collect data
     const form = new FormData();
     form.append("message", text);
+    const selectedModel = (els.modelSelect && els.modelSelect.value) ? els.modelSelect.value : "flash";
+    form.append("model", selectedModel);
     
     const selectedAssets = Array.from(document.querySelectorAll(".asset-check:checked")).map(cb => cb.value);
     if (selectedAssets.length > 0) {
@@ -647,6 +688,7 @@ async function uploadAssets() {
 
     const form = new FormData();
     Array.from(files).forEach(f => form.append("files", f));
+    const placeholders = addUploadPlaceholders(files);
     
     try {
         // Use new upload endpoint
@@ -658,10 +700,20 @@ async function uploadAssets() {
         if (res.ok) {
             loadAssets();
         } else {
+            placeholders.forEach(card => {
+                card.classList.add("upload-failed");
+                const size = card.querySelector(".asset-size");
+                if (size) size.textContent = "Upload failed";
+            });
             alert("Upload failed.");
         }
     } catch (e) {
         console.error(e);
+        placeholders.forEach(card => {
+            card.classList.add("upload-failed");
+            const size = card.querySelector(".asset-size");
+            if (size) size.textContent = "Upload failed";
+        });
         alert("Upload error: " + e.message);
     } finally {
         els.assetUpload.value = ""; // Reset
@@ -674,6 +726,7 @@ async function uploadFiles(files) {
 
     const form = new FormData();
     Array.from(files).forEach(f => form.append("files", f));
+    const placeholders = addUploadPlaceholders(files);
     
     try {
         const res = await fetch(`/api/sessions/${currentSession}/assets/upload`, {
@@ -684,10 +737,20 @@ async function uploadFiles(files) {
         if (res.ok) {
             loadAssets();
         } else {
+            placeholders.forEach(card => {
+                card.classList.add("upload-failed");
+                const size = card.querySelector(".asset-size");
+                if (size) size.textContent = "Upload failed";
+            });
             alert("Upload failed.");
         }
     } catch (e) {
         console.error(e);
+        placeholders.forEach(card => {
+            card.classList.add("upload-failed");
+            const size = card.querySelector(".asset-size");
+            if (size) size.textContent = "Upload failed";
+        });
         alert("Upload error: " + e.message);
     }
 }

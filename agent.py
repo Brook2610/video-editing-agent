@@ -336,13 +336,27 @@ def _build_initial_message(
     return HumanMessage(content=user_text)
 
 
+def _invoke_with_retry(model: ChatGoogleGenerativeAI, messages: List[Any]) -> Any:
+    delays = [2, 4, 8]
+    for attempt, delay in enumerate([0] + delays):
+        if attempt > 0:
+            _log(f"Retrying model call in {delay}s (attempt {attempt + 1}/{len(delays) + 1})")
+            time.sleep(delay)
+        try:
+            return model.invoke(messages)
+        except Exception as exc:
+            if attempt >= len(delays):
+                raise
+            _log(f"Model call failed: {exc}")
+
+
 def _build_graph(model: ChatGoogleGenerativeAI, tools: List[StructuredTool]) -> StateGraph:
     tool_node = ToolNode(tools)
 
     def _call_model(state: AgentState) -> AgentState:
         messages = state["messages"]
         _log(f"Turn {state['step'] + 1}: invoking model (messages={len(messages)})")
-        response = model.invoke(messages)
+        response = _invoke_with_retry(model, messages)
         tool_calls = getattr(response, "tool_calls", None) or []
         if tool_calls:
             _log(f"Model returned {len(tool_calls)} tool call(s)")
