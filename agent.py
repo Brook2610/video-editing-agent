@@ -350,7 +350,8 @@ def _build_graph(model: ChatGoogleGenerativeAI, tools: List[StructuredTool]) -> 
                 _log(f"Tool requested: {call.get('name')} args={call.get('args')}")
         else:
             preview = getattr(response, "text", None) or str(response)
-            _log(f"Model response preview: {preview[:120].replace('\n', ' ')}")
+            preview_clean = preview[:120].replace("\n", " ")
+            _log(f"Model response preview: {preview_clean}")
         return {"messages": [response], "step": state["step"] + 1}
 
     def _has_tool_calls(state: AgentState) -> str:
