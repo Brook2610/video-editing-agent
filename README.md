@@ -38,6 +38,10 @@ Open: http://localhost:8000
 - Project files live under `projects/` (git-ignored).
 - Assets live in `projects/<session>/public/assets`.
 - Outputs live in `projects/<session>/out`.
+- Agent memory uses LangGraph SQLite checkpoints at `projects/<session>/.langgraph-checkpoint.db`.
+- A rolling summary is stored at `projects/<session>/.memory-summary.txt`.
+- UI history export remains at `projects/<session>/.memory.jsonl` and is capped.
+- Memory tuning values are hardcoded in `agent.py` (not env-driven).
 
 ---
 

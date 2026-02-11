@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&display=swap" rel="stylesheet">
     <!-- CSS -->
-    <link rel="stylesheet" href="/static/style.css?v=28">
+    <link rel="stylesheet" href="/static/style.css?v=31">
     <!-- Markdown CSS (use local styles for consistent layout) -->
     <!-- Icons - Phosphor (much cleaner than Lucide) -->
     <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
@@ -90,7 +90,7 @@
                     <div class="view-content" id="view-content">
                         <div class="view-placeholder">
                             <i class="ph ph-image" style="font-size:48px;"></i>
-                            <p>Double-click any image or video to view</p>
+                            <p>Double-click any image, video, or audio file to view</p>
                         </div>
                     </div>
                     
@@ -99,6 +99,9 @@
                             <textarea id="message-view" rows="1" placeholder="Describe the video you want to create..."></textarea>
                             <button id="send-view" class="btn-send" title="Send"><i class="ph ph-paper-plane-tilt"></i></button>
                         </div>
+                        <p class="view-guide">
+                            Tip: Double-click video/audio timeline to add timestamps, or double-click an image to insert its filename.
+                        </p>
                     </footer>
                 </section>
 
@@ -139,9 +142,57 @@
         </main>
     </div>
 
+    <div id="project-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="project-modal-title">
+            <div class="modal-header">
+                <h2 id="project-modal-title">Create Project</h2>
+                <button id="project-modal-close" class="btn-icon" type="button" title="Close">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <p class="modal-subtitle">Start a fresh workspace for your next video edit.</p>
+            <form id="project-form" class="modal-form">
+                <label for="project-name-input">Project name</label>
+                <input
+                    id="project-name-input"
+                    name="projectName"
+                    type="text"
+                    maxlength="80"
+                    placeholder="e.g. launch-trailer-v2"
+                    autocomplete="off"
+                />
+                <div class="modal-actions">
+                    <button id="project-cancel" class="btn-ghost" type="button">Cancel</button>
+                    <button id="project-create" class="btn-primary" type="submit">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="delete-project-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-project-title">
+            <div class="modal-header">
+                <h2 id="delete-project-title">Delete Project</h2>
+                <button id="delete-project-close" class="btn-icon" type="button" title="Close">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
+            <p class="modal-subtitle">
+                Are you sure you want to delete
+                <strong id="delete-project-name"></strong>?
+                This cannot be undone.
+            </p>
+            <div class="modal-actions">
+                <button id="delete-project-cancel" class="btn-ghost" type="button">Cancel</button>
+                <button id="delete-project-confirm" class="btn-danger" type="button">Delete</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Marked.js for Markdown (load before app.js) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@11/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
     <!-- Application Logic -->
-    <script src="/static/app.js?v=25"></script>
+    <script src="/static/app.js?v=28"></script>
 </body>
 </html>

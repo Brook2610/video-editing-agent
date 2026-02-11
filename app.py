@@ -199,6 +199,18 @@ def create_session(name: Optional[str] = Form(None)) -> JSONResponse:
     return JSONResponse({"session": session_id})
 
 
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str) -> JSONResponse:
+    session_dir = _session_dir(session_id)
+    root = PROJECTS_ROOT.resolve()
+    if not str(session_dir).startswith(str(root)):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+    if not session_dir.exists() or not session_dir.is_dir():
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    shutil.rmtree(session_dir)
+    return JSONResponse({"deleted": session_id})
+
+
 @app.get("/api/sessions/{session_id}/messages")
 def get_messages(session_id: str) -> JSONResponse:
     return JSONResponse({"messages": _read_messages(session_id)})

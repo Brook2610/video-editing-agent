@@ -14,10 +14,11 @@ from typing_extensions import Annotated
 from dotenv import find_dotenv, load_dotenv
 from google import genai
 
-from langchain_core.messages import HumanMessage, SystemMessage, messages_from_dict, messages_to_dict
+from langchain_core.messages import HumanMessage, SystemMessage, messages_to_dict, trim_messages
 from langchain_core.tools import StructuredTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -30,6 +31,12 @@ DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 DEFAULT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "100"))
 LOG_PREFIX = "[video-agent]"
 MAX_INLINE_BYTES = 20 * 1024 * 1024
+# Memory controls are intentionally hardcoded to keep behavior stable across deployments.
+DEFAULT_RECENT_MESSAGES_LIMIT = 50
+DEFAULT_CONTEXT_MAX_TOKENS = 200000
+DEFAULT_SUMMARY_TRIGGER_TOKENS = 110000
+DEFAULT_SUMMARY_MAX_CHARS = 7500
+DEFAULT_MEMORY_EXPORT_MAX_MESSAGES = 300
 
 
 @dataclass
@@ -232,30 +239,150 @@ def _build_video_input(client: genai.Client, source: str) -> Dict[str, Any]:
     return {"type": "video", "base64": encoded, "mime_type": _mime_for_path(path)}
 
 
+def _checkpoint_path(project: str) -> Path:
+    return (PROJECTS_ROOT / project / ".langgraph-checkpoint.db").resolve()
+
+
 def _memory_path(project: str) -> Path:
     return (PROJECTS_ROOT / project / ".memory.jsonl").resolve()
 
 
-def _load_memory(project: str) -> List[Any]:
-    path = _memory_path(project)
+def _summary_path(project: str) -> Path:
+    return (PROJECTS_ROOT / project / ".memory-summary.txt").resolve()
+
+
+def _load_summary(project: str) -> str:
+    path = _summary_path(project)
     if not path.exists():
-        return []
+        return ""
     try:
-        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
-        payload = [json.loads(line) for line in lines if line.strip()]
-        return messages_from_dict(payload)
+        return path.read_text(encoding="utf-8", errors="ignore").strip()
     except Exception:
-        return []
+        return ""
+
+
+def _save_summary(project: str, summary: str) -> None:
+    path = _summary_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(summary.strip(), encoding="utf-8")
 
 
 def _save_memory(project: str, messages: List[Any]) -> None:
     path = _memory_path(project)
     path.parent.mkdir(parents=True, exist_ok=True)
     filtered = [msg for msg in messages if not isinstance(msg, SystemMessage)]
+    if len(filtered) > DEFAULT_MEMORY_EXPORT_MAX_MESSAGES:
+        filtered = filtered[-DEFAULT_MEMORY_EXPORT_MAX_MESSAGES:]
     data = messages_to_dict(filtered)
     with path.open("w", encoding="utf-8") as handle:
         for item in data:
             handle.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def _estimate_tokens(messages: List[Any]) -> int:
+    total_chars = 0
+    for msg in messages:
+        content = getattr(msg, "content", "")
+        if isinstance(content, str):
+            total_chars += len(content)
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    total_chars += len(str(part.get("text", "")))
+                else:
+                    total_chars += len(str(part))
+        else:
+            total_chars += len(str(content))
+    return max(1, total_chars // 4)
+
+
+def _build_message_context(
+    messages: List[Any],
+    summary: str,
+    system_prompt: str,
+) -> List[Any]:
+    recent = messages[-DEFAULT_RECENT_MESSAGES_LIMIT:]
+    try:
+        trimmed = trim_messages(
+            recent,
+            max_tokens=DEFAULT_CONTEXT_MAX_TOKENS,
+            token_counter=lambda batch: _estimate_tokens(list(batch)),
+            strategy="last",
+            start_on="human",
+            allow_partial=False,
+        )
+    except Exception:
+        trimmed = recent
+
+    context: List[Any] = [SystemMessage(content=system_prompt)]
+    if summary:
+        context.append(
+            SystemMessage(
+                content=(
+                    "Conversation summary so far. Use this as memory and avoid repeating already completed work:\n"
+                    f"{summary}"
+                )
+            )
+        )
+    context.extend(trimmed)
+    return context
+
+
+def _render_message_for_summary(message: Any) -> str:
+    role = getattr(message, "type", None) or message.__class__.__name__.replace("Message", "").lower()
+    content = getattr(message, "content", "")
+    if isinstance(content, list):
+        text_parts: List[str] = []
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text_parts.append(str(part.get("text", "")))
+        text = "\n".join([item for item in text_parts if item]).strip()
+    else:
+        text = str(content).strip()
+    if len(text) > 1200:
+        text = text[:1200] + "..."
+    return f"{role}: {text}"
+
+
+def _update_summary_if_needed(project: str, model: str, messages: List[Any], existing_summary: str) -> str:
+    estimated_tokens = _estimate_tokens(messages)
+    if estimated_tokens < DEFAULT_SUMMARY_TRIGGER_TOKENS:
+        return existing_summary
+
+    transcript_slice = messages[-80:]
+    transcript = "\n\n".join(_render_message_for_summary(msg) for msg in transcript_slice)
+    prompt = (
+        "You maintain compact memory for a video editing coding agent.\n"
+        "Merge the prior summary with the latest transcript into one concise, factual summary.\n"
+        "Keep key user preferences, project decisions, completed work, pending tasks, and unresolved issues.\n"
+        "Use plain bullet points and keep it under 1000 words.\n\n"
+        f"Prior summary:\n{existing_summary or '(none)'}\n\n"
+        f"Latest transcript:\n{transcript}"
+    )
+
+    summarizer = ChatGoogleGenerativeAI(
+        model=model,
+        temperature=0.2,
+        max_retries=2,
+    )
+    try:
+        response = _invoke_with_retry(
+            summarizer,
+            [
+                SystemMessage(content="Produce a compact memory summary for future turns."),
+                HumanMessage(content=prompt),
+            ],
+        )
+        content = getattr(response, "text", None) or str(response)
+        summary = content.strip()
+        if len(summary) > DEFAULT_SUMMARY_MAX_CHARS:
+            summary = summary[:DEFAULT_SUMMARY_MAX_CHARS].rstrip() + "..."
+        _save_summary(project, summary)
+        _log(f"Summary refreshed (chars={len(summary)}, tokens~{estimated_tokens})")
+        return summary
+    except Exception as exc:
+        _log(f"Summary refresh failed: {exc}")
+        return existing_summary
 
 
 def _build_tools() -> List[StructuredTool]:
@@ -350,13 +477,23 @@ def _invoke_with_retry(model: ChatGoogleGenerativeAI, messages: List[Any]) -> An
             _log(f"Model call failed: {exc}")
 
 
-def _build_graph(model: ChatGoogleGenerativeAI, tools: List[StructuredTool]) -> StateGraph:
+def _build_graph(
+    model: ChatGoogleGenerativeAI,
+    tools: List[StructuredTool],
+    system_prompt: str,
+    conversation_summary: str,
+    checkpointer: SqliteSaver,
+) -> StateGraph:
     tool_node = ToolNode(tools)
 
     def _call_model(state: AgentState) -> AgentState:
-        messages = state["messages"]
-        _log(f"Turn {state['step'] + 1}: invoking model (messages={len(messages)})")
-        response = _invoke_with_retry(model, messages)
+        state_messages = state["messages"]
+        context = _build_message_context(state_messages, conversation_summary, system_prompt)
+        _log(
+            f"Turn {state['step'] + 1}: invoking model "
+            f"(state_messages={len(state_messages)}, context_messages={len(context)})"
+        )
+        response = _invoke_with_retry(model, context)
         tool_calls = getattr(response, "tool_calls", None) or []
         if tool_calls:
             _log(f"Model returned {len(tool_calls)} tool call(s)")
@@ -384,7 +521,7 @@ def _build_graph(model: ChatGoogleGenerativeAI, tools: List[StructuredTool]) -> 
     graph.add_conditional_edges("agent", _has_tool_calls, {"tools": "tools", END: END})
     graph.add_edge("tools", "agent")
     graph.set_entry_point("agent")
-    compiled = graph.compile()
+    compiled = graph.compile(checkpointer=checkpointer)
     return compiled
 
 
@@ -422,36 +559,45 @@ def run_agent(
         max_retries=2,
     ).bind_tools(tools)
 
-    memory_messages = _load_memory(project)
-    _log(f"Memory messages loaded: {len(memory_messages)}")
+    summary = _load_summary(project)
+    if summary:
+        _log(f"Summary loaded (chars={len(summary)})")
 
-    messages: List[Any] = [SystemMessage(content=system_prompt)]
-    messages.extend(memory_messages)
-    include_project_header = len(memory_messages) == 0
-    messages.append(
+    existing_memory = _checkpoint_path(project).exists() or _memory_path(project).exists() or bool(summary)
+    initial_message = (
         _build_initial_message(
             client,
             project,
             request,
             video_source,
             assets=assets,
-            include_project_header=include_project_header,
+            include_project_header=not existing_memory,
         )
     )
 
-    graph = _build_graph(llm, tools)
-    state = {"messages": messages, "step": 0, "max_steps": max_steps}
-    try:
-        result = graph.invoke(state, config={"recursion_limit": max_steps * 2})
-    except ChatGoogleGenerativeAIError as exc:
-        key = os.getenv("GOOGLE_API_KEY", "")
-        suffix = key[-6:] if key else "(missing)"
-        _log(f"API key suffix in use: ***{suffix}")
-        raise
-    new_messages = result["messages"]
+    checkpoint_path = _checkpoint_path(project)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    with SqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
+        graph = _build_graph(llm, tools, system_prompt, summary, checkpointer)
+        state = {"messages": [initial_message], "step": 0, "max_steps": max_steps}
+        try:
+            result = graph.invoke(
+                state,
+                config={
+                    "recursion_limit": max_steps * 2,
+                    "configurable": {"thread_id": project},
+                },
+            )
+        except ChatGoogleGenerativeAIError:
+            key = os.getenv("GOOGLE_API_KEY", "")
+            suffix = key[-6:] if key else "(missing)"
+            _log(f"API key suffix in use: ***{suffix}")
+            raise
+        new_messages = result["messages"]
 
     _save_memory(project, new_messages)
-    _log(f"Memory messages saved: {len(new_messages)}")
+    summary = _update_summary_if_needed(project, model, new_messages, summary)
+    _log(f"Memory export saved: {len(new_messages)} messages")
 
     last = new_messages[-1]
     return getattr(last, "text", None) or str(last)

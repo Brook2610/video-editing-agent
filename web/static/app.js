@@ -4,6 +4,10 @@ let viewMode = false;
 let lastTimeInsert = null;
 let currentViewAssetName = "";
 let eventSource = null;
+let pendingDeleteSession = null;
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac'];
 
 // DOM Elements
 const els = {
@@ -25,7 +29,18 @@ const els = {
     messageViewInput: document.getElementById("message-view"),
     modelSelect: document.getElementById("model-select"),
     newSessionBtn: document.getElementById("new-session"),
-    toggleOptions: document.querySelectorAll(".toggle-option")
+    toggleOptions: document.querySelectorAll(".toggle-option"),
+    projectModal: document.getElementById("project-modal"),
+    projectForm: document.getElementById("project-form"),
+    projectNameInput: document.getElementById("project-name-input"),
+    projectModalClose: document.getElementById("project-modal-close"),
+    projectCancelBtn: document.getElementById("project-cancel"),
+    projectCreateBtn: document.getElementById("project-create"),
+    deleteProjectModal: document.getElementById("delete-project-modal"),
+    deleteProjectName: document.getElementById("delete-project-name"),
+    deleteProjectClose: document.getElementById("delete-project-close"),
+    deleteProjectCancel: document.getElementById("delete-project-cancel"),
+    deleteProjectConfirm: document.getElementById("delete-project-confirm")
 };
 
 // Utilities
@@ -58,6 +73,23 @@ function formatTimestamp(seconds) {
         return `${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
     }
     return `${pad(minutes)}:${pad(secs)}`;
+}
+
+function parseTimestampValue(value) {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const text = String(value).trim();
+    if (!text) return null;
+    if (/^\d+(\.\d+)?$/.test(text)) return Number(text);
+    if (/^\d{1,2}:\d{2}$/.test(text)) {
+        const [mm, ss] = text.split(':').map(Number);
+        return (mm * 60) + ss;
+    }
+    if (/^\d{1,2}:\d{2}:\d{2}$/.test(text)) {
+        const [hh, mm, ss] = text.split(':').map(Number);
+        return (hh * 3600) + (mm * 60) + ss;
+    }
+    return null;
 }
 
 function insertTimecode(input, timeText) {
@@ -113,10 +145,37 @@ function insertTimecode(input, timeText) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function insertImageFilename(input) {
+    if (!input || !currentViewAssetName) return;
+    const value = input.value || "";
+    const selectionStart = input.selectionStart ?? value.length;
+    const selectionEnd = input.selectionEnd ?? value.length;
+    const label = `[${currentViewAssetName}]`;
+    const needsPrefixSpace = selectionStart > 0 && !/\s/.test(value[selectionStart - 1]);
+    const needsSuffixSpace = selectionEnd < value.length && !/\s/.test(value[selectionEnd]);
+    const prefix = needsPrefixSpace ? " " : "";
+    const suffix = needsSuffixSpace ? " " : "";
+    const insertText = `${prefix}${label}${suffix}`;
+
+    input.value = value.slice(0, selectionStart) + insertText + value.slice(selectionEnd);
+    const cursorPos = selectionStart + insertText.length;
+    input.selectionStart = cursorPos;
+    input.selectionEnd = cursorPos;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function handleVideoTimecodeDblClick(videoEl) {
-    const input = viewMode ? els.messageViewInput : els.messageInput;
+    const input = getActiveInput();
     if (!input || !videoEl) return;
     const timeText = formatTimestamp(videoEl.currentTime);
+    insertTimecode(input, timeText);
+    input.focus();
+}
+
+function handleAudioTimecodeDblClick(audioEl) {
+    const input = getActiveInput();
+    if (!input || !audioEl) return;
+    const timeText = formatTimestamp(audioEl.currentTime);
     insertTimecode(input, timeText);
     input.focus();
 }
@@ -328,6 +387,165 @@ function buildVideoControls(videoEl) {
     return controls;
 }
 
+function buildAudioControls(audioEl) {
+    const controls = document.createElement('div');
+    controls.className = 'video-controls';
+
+    const left = document.createElement('div');
+    left.className = 'controls-left';
+    const playBtn = document.createElement('button');
+    playBtn.type = 'button';
+    playBtn.className = 'control-btn';
+    const playIcon = document.createElement('i');
+    playIcon.className = 'ph ph-play';
+    playBtn.appendChild(playIcon);
+    const timeLabel = document.createElement('span');
+    timeLabel.className = 'time-label';
+    timeLabel.textContent = '00:00 / 00:00';
+    left.appendChild(playBtn);
+    left.appendChild(timeLabel);
+
+    const center = document.createElement('div');
+    center.className = 'controls-center';
+    const rangeWrap = document.createElement('div');
+    rangeWrap.className = 'timeline-wrap';
+    rangeWrap.dataset.tooltip = 'Double click to insert timeline';
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.className = 'timeline-range';
+    range.min = 0;
+    range.max = 0;
+    range.step = 0.01;
+    range.value = 0;
+    rangeWrap.appendChild(range);
+    center.appendChild(rangeWrap);
+
+    const right = document.createElement('div');
+    right.className = 'controls-right';
+    const muteBtn = document.createElement('button');
+    muteBtn.type = 'button';
+    muteBtn.className = 'control-btn';
+    const muteIcon = document.createElement('i');
+    muteIcon.className = 'ph ph-speaker-high';
+    muteBtn.appendChild(muteIcon);
+    const volume = document.createElement('input');
+    volume.type = 'range';
+    volume.className = 'volume-range';
+    volume.min = 0;
+    volume.max = 1;
+    volume.step = 0.01;
+    volume.value = audioEl.volume ?? 1;
+    right.appendChild(muteBtn);
+    right.appendChild(volume);
+
+    controls.appendChild(left);
+    controls.appendChild(center);
+    controls.appendChild(right);
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'timeline-tooltip';
+    tooltip.textContent = 'Double click to insert timeline';
+    rangeWrap.appendChild(tooltip);
+
+    const setButtonIcon = (btn, name) => {
+        btn.innerHTML = '';
+        const icon = document.createElement('i');
+        icon.className = `ph ph-${name}`;
+        btn.appendChild(icon);
+    };
+    const updatePlayIcon = () => setButtonIcon(playBtn, audioEl.paused ? 'play' : 'pause');
+    const updateMuteIcon = () => setButtonIcon(muteBtn, audioEl.muted ? 'speaker-x' : 'speaker-high');
+    const updateTimeLabel = () => {
+        const current = formatTimestamp(audioEl.currentTime);
+        const total = Number.isFinite(audioEl.duration) ? formatTimestamp(audioEl.duration) : '00:00';
+        timeLabel.textContent = `${current} / ${total}`;
+    };
+
+    playBtn.addEventListener('click', () => {
+        if (audioEl.paused) audioEl.play().catch(() => {});
+        else audioEl.pause();
+    });
+    muteBtn.addEventListener('click', () => {
+        audioEl.muted = !audioEl.muted;
+        updateMuteIcon();
+    });
+    volume.addEventListener('input', () => {
+        audioEl.volume = Number(volume.value);
+        if (audioEl.volume > 0 && audioEl.muted) {
+            audioEl.muted = false;
+            updateMuteIcon();
+        }
+    });
+    audioEl.addEventListener('loadedmetadata', () => {
+        range.max = Number.isFinite(audioEl.duration) ? audioEl.duration : 0;
+        updateTimeLabel();
+    });
+    audioEl.addEventListener('timeupdate', () => {
+        if (!Number.isFinite(audioEl.duration)) return;
+        range.value = audioEl.currentTime;
+        const pct = (audioEl.currentTime / audioEl.duration) * 100;
+        range.style.setProperty('--progress', `${pct}%`);
+        updateTimeLabel();
+    });
+    audioEl.addEventListener('play', updatePlayIcon);
+    audioEl.addEventListener('pause', updatePlayIcon);
+    audioEl.addEventListener('volumechange', updateMuteIcon);
+    range.addEventListener('input', () => {
+        if (!Number.isFinite(audioEl.duration)) return;
+        audioEl.currentTime = Number(range.value);
+        const pct = (audioEl.currentTime / audioEl.duration) * 100;
+        range.style.setProperty('--progress', `${pct}%`);
+    });
+    range.addEventListener('dblclick', (e) => {
+        if (!Number.isFinite(audioEl.duration)) return;
+        const rect = range.getBoundingClientRect();
+        const pct = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+        audioEl.currentTime = pct * audioEl.duration;
+        range.style.setProperty('--progress', `${pct * 100}%`);
+        handleAudioTimecodeDblClick(audioEl);
+    });
+    rangeWrap.addEventListener('mousemove', (e) => {
+        const rect = rangeWrap.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        tooltip.style.left = `${Math.max(12, Math.min(rect.width - 12, x))}px`;
+        tooltip.style.opacity = '1';
+    });
+    rangeWrap.addEventListener('mouseleave', () => {
+        tooltip.style.opacity = '0';
+    });
+
+    updatePlayIcon();
+    updateMuteIcon();
+    updateTimeLabel();
+    updateIcons();
+    return controls;
+}
+
+async function readAudioArtwork(url) {
+    if (!window.jsmediatags) return null;
+    return new Promise((resolve) => {
+        try {
+            new window.jsmediatags.Reader(url).setTagsToRead(["picture"]).read({
+                onSuccess: (tag) => {
+                    const picture = tag?.tags?.picture;
+                    if (!picture?.data || !picture?.format) {
+                        resolve(null);
+                        return;
+                    }
+                    let base64 = "";
+                    for (let i = 0; i < picture.data.length; i += 1) {
+                        base64 += String.fromCharCode(picture.data[i]);
+                    }
+                    resolve(`data:${picture.format};base64,${window.btoa(base64)}`);
+                },
+                onError: () => resolve(null),
+            });
+        } catch (_) {
+            resolve(null);
+        }
+    });
+}
+
 // UI Rendering
 function renderMessage(role, text) {
     if (!els.chat) return;
@@ -377,12 +595,46 @@ function renderSessionItem(name, isActive) {
     icon.style.fontSize = "16px";
     
     const span = createEl("span", "", name);
+    const deleteBtn = createEl("button", "session-delete-btn");
+    deleteBtn.type = "button";
+    deleteBtn.title = "Delete project";
+    deleteBtn.setAttribute("aria-label", `Delete project ${name}`);
+    deleteBtn.innerHTML = '<i class="ph ph-trash"></i>';
+    deleteBtn.onclick = (event) => {
+        event.stopPropagation();
+        openDeleteProjectModal(name);
+    };
     
     li.appendChild(icon);
     li.appendChild(span);
+    li.appendChild(deleteBtn);
     
     li.onclick = () => selectSession(name);
     return li;
+}
+
+function getActiveInput() {
+    return viewMode ? els.messageViewInput : els.messageInput;
+}
+
+function switchToChatMode() {
+    viewMode = false;
+    els.chatPane.style.display = 'flex';
+    els.viewPane.style.display = 'none';
+    els.toggleOptions.forEach(opt => {
+        if (opt.dataset.mode === 'chat') opt.classList.add('active');
+        else opt.classList.remove('active');
+    });
+}
+
+function switchToViewMode() {
+    viewMode = true;
+    els.chatPane.style.display = 'none';
+    els.viewPane.style.display = 'flex';
+    els.toggleOptions.forEach(opt => {
+        if (opt.dataset.mode === 'view') opt.classList.add('active');
+        else opt.classList.remove('active');
+    });
 }
 
 function renderAssetCard(asset) {
@@ -402,7 +654,7 @@ function renderAssetCard(asset) {
     // Can we show a real preview?
     const assetUrl = `/api/sessions/${currentSession}/assets/${encodeURIComponent(asset.name)}`;
     
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+    if (IMAGE_EXTENSIONS.includes(ext)) {
         const img = document.createElement("img");
         img.src = assetUrl;
         img.loading = "lazy";
@@ -414,7 +666,7 @@ function renderAssetCard(asset) {
             currentViewAssetName = fileName;
             openInViewMode(assetUrl, 'image');
         });
-    } else if (['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)) {
+    } else if (VIDEO_EXTENSIONS.includes(ext)) {
         // Video thumbnail/preview
         console.log('Creating video preview for:', asset.name, 'URL:', assetUrl);
         const video = document.createElement("video");
@@ -455,11 +707,20 @@ function renderAssetCard(asset) {
             currentViewAssetName = fileName;
             openInViewMode(assetUrl, 'video');
         });
+    } else if (AUDIO_EXTENSIONS.includes(ext)) {
+        const icon = document.createElement("i");
+        icon.className = "ph ph-waveform";
+        preview.appendChild(icon);
+        preview.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            currentViewAssetName = fileName;
+            openInViewMode(assetUrl, 'audio');
+        });
     } else {
         // Fallback Icon
         const icon = document.createElement("i");
         let iconClass = "ph ph-file";
-        if (['mp3', 'wav', 'aac'].includes(ext)) iconClass = "ph ph-music-note";
+        if (AUDIO_EXTENSIONS.includes(ext)) iconClass = "ph ph-music-note";
         
         icon.className = iconClass;
         preview.appendChild(icon);
@@ -540,6 +801,11 @@ async function loadSessions() {
         const res = await fetch("/api/sessions");
         const data = await res.json();
         console.log('Sessions data:', data);
+
+        if (currentSession && !data.sessions.includes(currentSession)) {
+            currentSession = null;
+            resetWorkspace();
+        }
         
         els.sessionList.innerHTML = "";
         
@@ -587,7 +853,7 @@ async function selectSession(id) {
     els.viewContent.innerHTML = `
         <div class="view-placeholder">
             <i class="ph ph-image" style="font-size:48px;"></i>
-            <p>Double-click any image or video to view</p>
+            <p>Double-click any image, video, or audio file to view</p>
         </div>
     `;
     updateIcons();
@@ -643,12 +909,17 @@ async function sendMessage() {
     if (!currentSession) return alert("Select a project first.");
     
     // Get the active input based on current mode
-    const input = viewMode ? els.messageViewInput : els.messageInput;
+    const fromViewMode = viewMode;
+    const input = getActiveInput();
     const text = input.value.trim();
     if (!text) return;
     
     input.value = "";
     input.style.height = "auto";
+
+    if (fromViewMode) {
+        switchToChatMode();
+    }
     
     renderMessage("user", text);
     
@@ -838,9 +1109,10 @@ function startEventStream() {
             const view = payload.data || {};
             const path = view.path || "";
             const ext = path.split('.').pop().toLowerCase();
-            const isVideo = ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext);
-            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
-            if (!isVideo && !isImage) return;
+            const isVideo = VIDEO_EXTENSIONS.includes(ext);
+            const isImage = IMAGE_EXTENSIONS.includes(ext);
+            const isAudio = AUDIO_EXTENSIONS.includes(ext);
+            if (!isVideo && !isImage && !isAudio) return;
 
             const url = view.kind === 'output'
                 ? `/api/sessions/${currentSession}/outputs/${encodeURIComponent(path)}?t=${Date.now()}`
@@ -848,7 +1120,7 @@ function startEventStream() {
 
             currentViewAssetName = path.split('/').pop() || path;
             const delayMs = isVideo ? 1000 : 0;
-            openInViewMode(url, isVideo ? 'video' : 'image', view.timestamp, delayMs);
+            openInViewMode(url, isVideo ? 'video' : (isAudio ? 'audio' : 'image'), view.timestamp, delayMs);
         } catch (e) {
             console.warn('Event parse failed', e);
         }
@@ -859,12 +1131,13 @@ function renderOutputItem(output) {
     
     const icon = document.createElement("i");
     const ext = output.name.split('.').pop().toLowerCase();
-    const isVideo = ['mp4', 'webm', 'mov', 'avi'].includes(ext);
-    const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+    const isVideo = VIDEO_EXTENSIONS.includes(ext);
+    const isImage = IMAGE_EXTENSIONS.includes(ext);
+    const isAudio = AUDIO_EXTENSIONS.includes(ext);
     
     if (isVideo) {
         icon.className = "ph ph-video-camera";
-    } else if (['mp3', 'wav', 'aac'].includes(ext)) {
+    } else if (isAudio) {
         icon.className = "ph ph-music-note";
     } else {
         icon.className = "ph ph-file";
@@ -884,9 +1157,9 @@ function renderOutputItem(output) {
         e.stopPropagation();
         const timestamp = Date.now();
         const url = `/api/sessions/${currentSession}/outputs/${encodeURIComponent(output.name)}?t=${timestamp}`;
-        if (isVideo || isImage) {
+        if (isVideo || isImage || isAudio) {
             currentViewAssetName = output.name;
-            openInViewMode(url, isVideo ? 'video' : 'image');
+            openInViewMode(url, isVideo ? 'video' : (isAudio ? 'audio' : 'image'));
         } else {
             window.open(url, '_blank');
         }
@@ -896,21 +1169,11 @@ function renderOutputItem(output) {
 }
 
 function openInViewMode(url, type) {
-    const startTime = arguments.length > 2 ? arguments[2] : null;
+    const startTimeRaw = arguments.length > 2 ? arguments[2] : null;
+    const startTime = parseTimestampValue(startTimeRaw);
     const delayMs = arguments.length > 3 ? arguments[3] : 0;
     // Switch to view mode
-    viewMode = true;
-    els.chatPane.style.display = 'none';
-    els.viewPane.style.display = 'flex';
-    
-    // Update slider
-    els.toggleOptions.forEach(opt => {
-        if (opt.dataset.mode === 'view') {
-            opt.classList.add('active');
-        } else {
-            opt.classList.remove('active');
-        }
-    });
+    switchToViewMode();
     
     // Clear and add media
     els.viewContent.innerHTML = '';
@@ -921,6 +1184,12 @@ function openInViewMode(url, type) {
         const img = document.createElement('img');
         img.src = url;
         img.className = 'view-media image';
+        img.title = 'Double-click to insert image filename into prompt';
+        img.addEventListener('dblclick', () => {
+            const input = getActiveInput();
+            insertImageFilename(input);
+            input?.focus();
+        });
         wrap.appendChild(img);
         els.viewContent.appendChild(wrap);
     } else if (type === 'video') {
@@ -935,8 +1204,8 @@ function openInViewMode(url, type) {
         video.className = 'view-media video';
         video.controls = false;
         video.autoplay = false;
-        if (startTime !== null && !Number.isNaN(Number(startTime))) {
-            const seekTo = Number(startTime);
+        if (startTime !== null) {
+            const seekTo = startTime;
             video.addEventListener('loadedmetadata', () => {
                 const target = Math.max(0, Math.min(video.duration || seekTo, seekTo));
                 video.currentTime = target;
@@ -957,6 +1226,59 @@ function openInViewMode(url, type) {
         wrap.appendChild(video);
         container.appendChild(wrap);
         container.appendChild(buildVideoControls(video));
+        els.viewContent.appendChild(container);
+    } else if (type === 'audio') {
+        const container = document.createElement('div');
+        container.className = 'view-video-container';
+
+        const wrap = document.createElement('div');
+        wrap.className = 'view-media-wrap';
+
+        const audioPanel = document.createElement('div');
+        audioPanel.className = 'view-audio-panel';
+        const artwork = document.createElement('img');
+        artwork.className = 'view-audio-art';
+        artwork.alt = 'Album artwork';
+        artwork.style.display = 'none';
+
+        const fallback = document.createElement('div');
+        fallback.className = 'view-audio-fallback';
+        fallback.innerHTML = '<i class="ph ph-waveform"></i>';
+
+        const title = document.createElement('div');
+        title.className = 'view-audio-title';
+        title.textContent = currentViewAssetName || 'Audio';
+
+        audioPanel.appendChild(artwork);
+        audioPanel.appendChild(fallback);
+        audioPanel.appendChild(title);
+        wrap.appendChild(audioPanel);
+
+        const audio = document.createElement('audio');
+        audio.src = url;
+        audio.preload = 'metadata';
+        audio.controls = false;
+        audio.autoplay = true;
+        audio.style.display = 'none';
+        if (startTime !== null) {
+            const seekTo = startTime;
+            audio.addEventListener('loadedmetadata', () => {
+                const target = Math.max(0, Math.min(audio.duration || seekTo, seekTo));
+                audio.currentTime = target;
+            });
+        }
+        audio.play().catch(() => {});
+
+        readAudioArtwork(url).then((imageData) => {
+            if (!imageData) return;
+            artwork.src = imageData;
+            artwork.style.display = 'block';
+            fallback.style.display = 'none';
+        });
+
+        container.appendChild(wrap);
+        container.appendChild(buildAudioControls(audio));
+        container.appendChild(audio);
         els.viewContent.appendChild(container);
     }
 }
@@ -988,24 +1310,156 @@ async function deleteAssets() {
     }
 }
 
-// Event Listeners
-if(els.newSessionBtn) {
-    els.newSessionBtn.onclick = async () => {
-        const name = prompt("Project Name:");
-        if (name) {
-            const form = new FormData();
-            form.append("name", name);
-            const res = await fetch("/api/sessions", { method: "POST", body: form });
-            const data = await res.json();
-            await loadSessions();
-            selectSession(data.session);
-        }
-    };
+function resetWorkspace() {
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    if (els.sessionTitle) els.sessionTitle.textContent = "Select a Project";
+    if (els.chat) els.chat.innerHTML = "";
+    if (els.assetsList) els.assetsList.innerHTML = "";
+    if (els.outputList) els.outputList.innerHTML = "";
+    if (els.viewContent) {
+        els.viewContent.innerHTML = `
+            <div class="view-placeholder">
+                <i class="ph ph-image" style="font-size:48px;"></i>
+                <p>Double-click any image, video, or audio file to view</p>
+            </div>
+        `;
+    }
+    viewMode = false;
+    currentViewAssetName = "";
+    if (els.chatPane) els.chatPane.style.display = "flex";
+    if (els.viewPane) els.viewPane.style.display = "none";
+    els.toggleOptions.forEach(opt => {
+        if (opt.dataset.mode === "chat") opt.classList.add("active");
+        else opt.classList.remove("active");
+    });
+    updateIcons();
 }
 
+function openProjectModal() {
+    if (!els.projectModal) return;
+    els.projectModal.classList.add("open");
+    els.projectModal.setAttribute("aria-hidden", "false");
+    if (els.projectNameInput) {
+        els.projectNameInput.value = "";
+        els.projectNameInput.focus();
+    }
+}
+
+function closeProjectModal() {
+    if (!els.projectModal) return;
+    els.projectModal.classList.remove("open");
+    els.projectModal.setAttribute("aria-hidden", "true");
+}
+
+function openDeleteProjectModal(sessionId) {
+    const targetSession = (sessionId || currentSession || "").trim();
+    if (!els.deleteProjectModal || !targetSession) return;
+    pendingDeleteSession = targetSession;
+    if (els.deleteProjectName) {
+        els.deleteProjectName.textContent = targetSession;
+    }
+    els.deleteProjectModal.classList.add("open");
+    els.deleteProjectModal.setAttribute("aria-hidden", "false");
+}
+
+function closeDeleteProjectModal() {
+    if (!els.deleteProjectModal) return;
+    els.deleteProjectModal.classList.remove("open");
+    els.deleteProjectModal.setAttribute("aria-hidden", "true");
+    pendingDeleteSession = null;
+}
+
+async function submitProjectCreate(event) {
+    event.preventDefault();
+    const name = (els.projectNameInput?.value || "").trim();
+    if (!name) return;
+
+    if (els.projectCreateBtn) {
+        els.projectCreateBtn.disabled = true;
+        els.projectCreateBtn.textContent = "Creating...";
+    }
+
+    try {
+        const form = new FormData();
+        form.append("name", name);
+        const res = await fetch("/api/sessions", { method: "POST", body: form });
+        if (!res.ok) {
+            throw new Error("Failed to create project");
+        }
+        const data = await res.json();
+        closeProjectModal();
+        await loadSessions();
+        await selectSession(data.session);
+    } catch (err) {
+        console.error("Create project failed", err);
+    } finally {
+        if (els.projectCreateBtn) {
+            els.projectCreateBtn.disabled = false;
+            els.projectCreateBtn.textContent = "Create";
+        }
+    }
+}
+
+async function confirmDeleteProject() {
+    const targetSession = (pendingDeleteSession || currentSession || "").trim();
+    if (!targetSession) return;
+    if (els.deleteProjectConfirm) {
+        els.deleteProjectConfirm.disabled = true;
+        els.deleteProjectConfirm.textContent = "Deleting...";
+    }
+    try {
+        const res = await fetch(`/api/sessions/${encodeURIComponent(targetSession)}`, {
+            method: "DELETE"
+        });
+        if (!res.ok) {
+            throw new Error("Failed to delete project");
+        }
+        closeDeleteProjectModal();
+        if (currentSession === targetSession) {
+            currentSession = null;
+            resetWorkspace();
+        }
+        await loadSessions();
+    } catch (err) {
+        console.error("Delete project failed", err);
+    } finally {
+        if (els.deleteProjectConfirm) {
+            els.deleteProjectConfirm.disabled = false;
+            els.deleteProjectConfirm.textContent = "Delete";
+        }
+    }
+}
+
+// Event Listeners
+if(els.newSessionBtn) {
+    els.newSessionBtn.onclick = openProjectModal;
+}
 if(els.deleteAssetsBtn) els.deleteAssetsBtn.onclick = deleteAssets;
 if(els.sendBtn) els.sendBtn.onclick = sendMessage;
 if(els.sendViewBtn) els.sendViewBtn.onclick = sendMessage;
+if(els.projectForm) els.projectForm.addEventListener("submit", submitProjectCreate);
+if(els.projectModalClose) els.projectModalClose.onclick = closeProjectModal;
+if(els.projectCancelBtn) els.projectCancelBtn.onclick = closeProjectModal;
+if(els.deleteProjectClose) els.deleteProjectClose.onclick = closeDeleteProjectModal;
+if(els.deleteProjectCancel) els.deleteProjectCancel.onclick = closeDeleteProjectModal;
+if(els.deleteProjectConfirm) els.deleteProjectConfirm.onclick = confirmDeleteProject;
+if(els.projectModal) {
+    els.projectModal.addEventListener("click", (event) => {
+        if (event.target === els.projectModal) {
+            closeProjectModal();
+        }
+    });
+}
+if(els.deleteProjectModal) {
+    els.deleteProjectModal.addEventListener("click", (event) => {
+        if (event.target === els.deleteProjectModal) {
+            closeDeleteProjectModal();
+        }
+    });
+}
 
 // Setup toggle slider
 els.toggleOptions.forEach(option => {
@@ -1018,13 +1472,9 @@ els.toggleOptions.forEach(option => {
         
         // Switch mode
         if (mode === 'view') {
-            viewMode = true;
-            els.chatPane.style.display = 'none';
-            els.viewPane.style.display = 'flex';
+            switchToViewMode();
         } else {
-            viewMode = false;
-            els.chatPane.style.display = 'flex';
-            els.viewPane.style.display = 'none';
+            switchToChatMode();
         }
     });
 });
@@ -1064,19 +1514,27 @@ if(els.messageViewInput) {
 }
 
 document.addEventListener('keydown', (e) => {
+    if (e.key === "Escape" && els.projectModal?.classList.contains("open")) {
+        closeProjectModal();
+        return;
+    }
+    if (e.key === "Escape" && els.deleteProjectModal?.classList.contains("open")) {
+        closeDeleteProjectModal();
+        return;
+    }
     if (e.code !== 'Space') return;
     if (!viewMode) return;
     const active = document.activeElement;
     if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
         return;
     }
-    const video = els.viewContent ? els.viewContent.querySelector('video') : null;
-    if (!video) return;
+    const media = els.viewContent ? els.viewContent.querySelector('video, audio') : null;
+    if (!media) return;
     e.preventDefault();
-    if (video.paused) {
-        video.play().catch(() => {});
+    if (media.paused) {
+        media.play().catch(() => {});
     } else {
-        video.pause();
+        media.pause();
     }
 });
 
