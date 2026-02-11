@@ -888,7 +888,7 @@ async function loadAssets() {
     els.assetsList.innerHTML = "";
     
     if (data.assets.length === 0) {
-        const empty = createEl("div", "assets-empty", "No assets yet. Drag & drop files here.");
+        const empty = createEl("div", "assets-empty", "Add files or drag and drop files here.");
         empty.style.color = "var(--text-muted)";
         empty.style.fontSize = "12px";
         empty.style.textAlign = "center";
@@ -1317,7 +1317,9 @@ function resetWorkspace() {
     }
     if (els.sessionTitle) els.sessionTitle.textContent = "Select a Project";
     if (els.chat) els.chat.innerHTML = "";
-    if (els.assetsList) els.assetsList.innerHTML = "";
+    if (els.assetsList) {
+        els.assetsList.innerHTML = `<div class="assets-empty">Add files or drag and drop files here.</div>`;
+    }
     if (els.outputList) els.outputList.innerHTML = "";
     if (els.viewContent) {
         els.viewContent.innerHTML = `
