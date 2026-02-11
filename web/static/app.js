@@ -811,12 +811,14 @@ async function loadSessions() {
         
         if (data.sessions.length === 0) {
             console.log('No sessions found');
+            currentSession = null;
             const empty = createEl("div", "", "No projects yet");
             empty.style.color = "var(--text-muted)";
             empty.style.fontSize = "12px";
             empty.style.textAlign = "center";
             empty.style.padding = "20px";
             els.sessionList.appendChild(empty);
+            resetWorkspace();
         } else {
             console.log('Rendering sessions:', data.sessions);
             data.sessions.forEach(session => {
@@ -1542,6 +1544,7 @@ document.addEventListener('keydown', (e) => {
 
 // Init - Load sessions when page loads
 document.addEventListener('DOMContentLoaded', () => {
+    resetWorkspace();
     loadSessions();
     startEventStream();
 });

@@ -138,16 +138,9 @@ def _skills_prompt_block(skills: List[SkillMeta]) -> str:
 
 
 def _select_active_skills(request: str, skills: List[SkillMeta]) -> List[SkillMeta]:
-    text = (request or "").lower()
-    active: List[SkillMeta] = []
-    for skill in skills:
-        if skill.name.lower() in text or "remotion" in text:
-            active.append(skill)
-    for skill in skills:
-        if "remotion" in skill.name.lower() and skill not in active:
-            if any(token in text for token in ["video", "edit", "editor", "remotion", "motion", "graphics"]):
-                active.append(skill)
-    return active
+    # All discovered skills are considered curated for this workspace.
+    # Keep all of them active by default.
+    return list(skills)
 
 
 def _load_skill_text(skill: SkillMeta) -> str:

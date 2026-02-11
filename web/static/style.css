@@ -1269,12 +1269,15 @@ textarea::placeholder {
 
 .assets-empty {
   grid-column: 1 / -1;
-  height: 100%;
+  min-height: 120px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   color: var(--text-muted);
+  font-size: 12px;
+  padding: 40px 20px;
+  line-height: 1.4;
 }
 /* Output List */
 .output-list {

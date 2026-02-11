@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
@@ -8,7 +9,9 @@ from typing import Any, Callable, Dict, List, Optional
 import mimetypes
 import os
 import time
+import wave
 from google import genai
+from google.genai import types
 
 from contextvars import ContextVar
 
@@ -423,6 +426,137 @@ def run_terminal(command: str, cwd: str = ".", timeout: int = 120) -> str:
     return output or f"Command finished with exit code {result.returncode}"
 
 
+def _write_wave_file(filename: Path, pcm_data: bytes, channels: int = 1, rate: int = 24000, sample_width: int = 2) -> None:
+    filename.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(filename), "wb") as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(rate)
+        wf.writeframes(pcm_data)
+
+
+def generate_speech(
+    text: str,
+    output_path: Optional[str] = None,
+    voice_name: str = "Kore",
+    style_prompt: str = "",
+    model: str = "gemini-2.5-flash-preview-tts",
+    speakers: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+    """Generate TTS audio from text and save as WAV in the active project.
+
+    Single-speaker: pass voice_name (default "Kore").
+    Multi-speaker: pass speakers=[{"name": "...", "voice_name": "..."}] (max 2).
+    Multi-speaker requires gemini-2.5-flash-preview-tts.
+    """
+    if not text or not text.strip():
+        return {"error": "Text is required for TTS generation"}
+
+    if output_path and output_path.strip():
+        try:
+            target = _safe_project_path(output_path.strip())
+        except ValueError as e:
+            return {"error": str(e)}
+    else:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        target = _safe_project_path(f"public/assets/tts/tts-{stamp}.wav")
+
+    if target.suffix.lower() != ".wav":
+        target = target.with_suffix(".wav")
+
+    prompt_text = text.strip()
+    if style_prompt.strip():
+        prompt_text = f"{style_prompt.strip()}\n\nRead this text exactly:\n{prompt_text}"
+
+    # Build speech config: multi-speaker or single-speaker
+    is_multi = speakers and isinstance(speakers, list) and len(speakers) >= 2
+
+    if is_multi:
+        if len(speakers) > 2:
+            return {"error": "Multi-speaker TTS supports a maximum of 2 speakers."}
+        if "pro" in model.lower():
+            return {"error": "Multi-speaker TTS is only supported on gemini-2.5-flash-preview-tts, not Pro."}
+        speaker_configs = []
+        for spk in speakers:
+            spk_name = spk.get("name", "").strip()
+            spk_voice = spk.get("voice_name", "Kore").strip()
+            if not spk_name:
+                return {"error": "Each speaker must have a 'name' that matches labels in the text."}
+            speaker_configs.append(
+                types.SpeakerVoiceConfig(
+                    speaker=spk_name,
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=spk_voice,
+                        )
+                    ),
+                )
+            )
+        speech_cfg = types.SpeechConfig(
+            multi_speaker_voice_config=types.MultiSpeakerVoiceConfig(
+                speaker_voice_configs=speaker_configs,
+            )
+        )
+    else:
+        speech_cfg = types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name=voice_name,
+                )
+            )
+        )
+
+    try:
+        client = genai.Client()
+        response = client.models.generate_content(
+            model=model,
+            contents=prompt_text,
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=speech_cfg,
+            ),
+        )
+    except Exception as exc:
+        return {"error": f"TTS request failed: {exc}"}
+
+    try:
+        part = response.candidates[0].content.parts[0]
+        data = getattr(getattr(part, "inline_data", None), "data", None)
+        if not data:
+            return {"error": "TTS response did not include audio data"}
+        if isinstance(data, str):
+            pcm_data = base64.b64decode(data)
+        else:
+            pcm_data = data
+
+        _write_wave_file(target, pcm_data, channels=1, rate=24000, sample_width=2)
+        with wave.open(str(target), "rb") as wf:
+            duration = wf.getnframes() / float(wf.getframerate() or 24000)
+            sample_rate = wf.getframerate()
+            channels = wf.getnchannels()
+    except Exception as exc:
+        return {"error": f"Failed to decode or save TTS audio: {exc}"}
+
+    project_id = ctx_project_id.get()
+    project_root = (PROJECTS_ROOT / project_id).resolve() if project_id else PROJECTS_ROOT
+    try:
+        rel_path = str(target.relative_to(project_root)).replace("\\", "/")
+    except Exception:
+        rel_path = str(target).replace("\\", "/")
+
+    return {
+        "success": True,
+        "path": rel_path,
+        "voice_name": voice_name,
+        "model": model,
+        "duration_seconds": round(duration, 3),
+        "sample_rate_hz": sample_rate,
+        "channels": channels,
+        "size_bytes": target.stat().st_size,
+        "text_characters": len(text),
+    }
+
+
 def get_asset_info(asset_path: str) -> Dict[str, Any]:
     # We ignore 'project' argument as we use ctx_project_id
     try:
@@ -709,6 +843,34 @@ def get_tools() -> List[ToolSpec]:
                 "required": ["asset_path"],
             },
             handler=inspect_asset,
+        ),
+        ToolSpec(
+            name="generate_speech",
+            description="Generate speech audio (WAV) from text using Gemini TTS. Supports single-speaker (default) and multi-speaker (up to 2) dialogue. Output is 24kHz mono WAV. Read the tts-voiceover skill for voice options, style prompting, and multi-speaker setup.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The narration text. For multi-speaker, format as 'SpeakerName: dialogue' lines."},
+                    "output_path": {"type": "string", "description": "Optional output WAV path (e.g. 'public/assets/tts/intro.wav'). Auto-generated if omitted."},
+                    "voice_name": {"type": "string", "description": "Voice for single-speaker (default 'Kore'). Ignored when speakers is set."},
+                    "style_prompt": {"type": "string", "description": "Natural-language delivery instructions: tone, pacing, accent, character. Prepended to text."},
+                    "model": {"type": "string", "description": "TTS model (default 'gemini-2.5-flash-preview-tts'). Use 'gemini-2.5-pro-preview-tts' for highest quality single-speaker."},
+                    "speakers": {
+                        "type": "array",
+                        "description": "For multi-speaker (max 2). Each entry: {name, voice_name}. Names must match labels in text. Flash model only.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "Speaker name matching the label in text."},
+                                "voice_name": {"type": "string", "description": "Voice for this speaker."}
+                            },
+                            "required": ["name", "voice_name"]
+                        }
+                    },
+                },
+                "required": ["text"],
+            },
+            handler=generate_speech,
         ),
         ToolSpec(
             name="set_view_asset",

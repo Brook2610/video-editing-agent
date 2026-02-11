@@ -76,6 +76,7 @@ If you need additional @remotion/* packages (e.g. @remotion/transitions, @remoti
 - `run_terminal(command="...", cwd=".", timeout=120)` - Execute shell commands. **Use timeout=300 for render commands.**
 - `get_asset_info(asset_path="...")` - Get video/audio metadata (duration, resolution, codec).
 - `inspect_asset(asset_path="...", prompt="...")` - Ask Gemini to analyze and describe an asset with timestamps.
+- `generate_speech(text="...", output_path="...", voice_name="...", style_prompt="...", speakers=[...])` - Generate TTS voiceover WAV files. Single-speaker (default) or multi-speaker (up to 2, pass speakers list). Read tts-voiceover skill for voices and prompting.
 - `set_view_asset(asset_path="...", timestamp=...)` - Open an asset(or output) video/photo in the UI View tab for the users (timestamp can be MM:SS) when you need to show the user something specific. Only one at a time
 
 ## Critical Rules
