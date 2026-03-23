@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime
 import asyncio
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -170,11 +171,16 @@ def _list_outputs(session_id: str) -> List[Dict[str, Any]]:
 def _save_upload(session_id: str, upload: UploadFile) -> Path:
     _ensure_session(session_id)
     assets = _assets_dir(session_id)
-    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
     safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", upload.filename or "upload")
-    target = assets / f"{timestamp}_{safe_name}"
+    target = assets / f"{timestamp}_{uuid.uuid4().hex[:8]}_{safe_name}"
     with target.open("wb") as handle:
-        handle.write(upload.file.read())
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            handle.write(chunk)
+    upload.file.close()
     return target
 
 # Routes
@@ -288,7 +294,9 @@ def send_message(
     model_choice = (model or "flash").strip().lower()
     if model_choice != "pro":
         model_choice = "flash"
-    model_name = f"gemini-3-{model_choice}-preview"
+        model_name = f"gemini-3-{model_choice}-preview"
+    else:
+        model_name = "gemini-3.1-pro-preview"
 
     print(f"[video-agent] Using model: {model_name}")
     response_text = run_agent(

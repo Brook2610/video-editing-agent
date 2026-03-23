@@ -5,6 +5,9 @@ let lastTimeInsert = null;
 let currentViewAssetName = "";
 let eventSource = null;
 let pendingDeleteSession = null;
+let isUploadingAssets = false;
+let lastUploadFingerprint = "";
+let lastUploadAt = 0;
 const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv'];
 const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 const AUDIO_EXTENSIONS = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac'];
@@ -966,16 +969,46 @@ async function sendMessage() {
 }
 
 async function uploadAssets() {
+    if (!els.assetUpload) return;
+    await uploadFiles(els.assetUpload.files, { resetInput: true });
+}
+
+function buildUploadFingerprint(files) {
+    return Array.from(files || [])
+        .map(file => `${file.name}:${file.size}:${file.lastModified}`)
+        .sort()
+        .join("|");
+}
+
+async function uploadFiles(files, options = {}) {
     if (!currentSession) return alert("Select a project first.");
-    const files = els.assetUpload.files;
-    if (files.length === 0) return;
+    if (!files || files.length === 0) return;
+
+    const { resetInput = false } = options;
+    const now = Date.now();
+    const fingerprint = buildUploadFingerprint(files);
+
+    if (isUploadingAssets) {
+        return;
+    }
+
+    // Some browsers can fire duplicate upload events quickly for the same selection.
+    if (fingerprint && fingerprint === lastUploadFingerprint && (now - lastUploadAt) < 1500) {
+        if (resetInput && els.assetUpload) {
+            els.assetUpload.value = "";
+        }
+        return;
+    }
+
+    isUploadingAssets = true;
+    lastUploadFingerprint = fingerprint;
+    lastUploadAt = now;
 
     const form = new FormData();
     Array.from(files).forEach(f => form.append("files", f));
     const placeholders = addUploadPlaceholders(files);
     
     try {
-        // Use new upload endpoint
         const res = await fetch(`/api/sessions/${currentSession}/assets/upload`, {
             method: "POST",
             body: form
@@ -1000,42 +1033,10 @@ async function uploadAssets() {
         });
         alert("Upload error: " + e.message);
     } finally {
-        els.assetUpload.value = ""; // Reset
-    }
-}
-
-async function uploadFiles(files) {
-    if (!currentSession) return alert("Select a project first.");
-    if (!files || files.length === 0) return;
-
-    const form = new FormData();
-    Array.from(files).forEach(f => form.append("files", f));
-    const placeholders = addUploadPlaceholders(files);
-    
-    try {
-        const res = await fetch(`/api/sessions/${currentSession}/assets/upload`, {
-            method: "POST",
-            body: form
-        });
-        
-        if (res.ok) {
-            loadAssets();
-        } else {
-            placeholders.forEach(card => {
-                card.classList.add("upload-failed");
-                const size = card.querySelector(".asset-size");
-                if (size) size.textContent = "Upload failed";
-            });
-            alert("Upload failed.");
+        isUploadingAssets = false;
+        if (resetInput && els.assetUpload) {
+            els.assetUpload.value = "";
         }
-    } catch (e) {
-        console.error(e);
-        placeholders.forEach(card => {
-            card.classList.add("upload-failed");
-            const size = card.querySelector(".asset-size");
-            if (size) size.textContent = "Upload failed";
-        });
-        alert("Upload error: " + e.message);
     }
 }
 
