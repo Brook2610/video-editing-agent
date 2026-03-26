@@ -14,7 +14,14 @@ from typing_extensions import Annotated
 from dotenv import find_dotenv, load_dotenv
 from google import genai
 
-from langchain_core.messages import HumanMessage, SystemMessage, messages_to_dict, trim_messages
+from langchain_core.messages import (
+    AIMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    messages_to_dict,
+    trim_messages,
+)
 from langchain_core.tools import StructuredTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
@@ -32,11 +39,15 @@ DEFAULT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "100"))
 LOG_PREFIX = "[video-agent]"
 MAX_INLINE_BYTES = 20 * 1024 * 1024
 # Memory controls are intentionally hardcoded to keep behavior stable across deployments.
-DEFAULT_RECENT_MESSAGES_LIMIT = 50
+DEFAULT_RECENT_MESSAGES_LIMIT = 60
 DEFAULT_CONTEXT_MAX_TOKENS = 200000
-DEFAULT_SUMMARY_TRIGGER_TOKENS = 110000
+DEFAULT_SUMMARY_TRIGGER_TOKENS = 80000
 DEFAULT_SUMMARY_MAX_CHARS = 7500
 DEFAULT_MEMORY_EXPORT_MAX_MESSAGES = 300
+# How many turns between in-loop summary checks (every N agent steps).
+SUMMARY_CHECK_INTERVAL = 8
+# Minimum non-system messages to keep after trimming.
+MIN_CONTEXT_MESSAGES = 3
 
 
 @dataclass
@@ -63,8 +74,12 @@ def _load_env() -> None:
         _log(f"Loaded env from {env_path}")
     else:
         _log("No .env found via find_dotenv")
-    if os.getenv("GOOGLE_API_KEY_PREMIUM"):
+    if os.getenv("GOOGLE_API_KEY_PREMIUM_VIDEO_EDITOR"):
+        os.environ["GOOGLE_API_KEY"] = os.environ["GOOGLE_API_KEY_PREMIUM_VIDEO_EDITOR"]
+        os.environ["GEMINI_API_KEY"] = os.environ["GOOGLE_API_KEY_PREMIUM_VIDEO_EDITOR"]
+    elif os.getenv("GOOGLE_API_KEY_PREMIUM"):
         os.environ["GOOGLE_API_KEY"] = os.environ["GOOGLE_API_KEY_PREMIUM"]
+        os.environ["GEMINI_API_KEY"] = os.environ["GOOGLE_API_KEY_PREMIUM"]
     api_key = os.getenv("GOOGLE_API_KEY", "")
     premium_key = os.getenv("GOOGLE_API_KEY_PREMIUM", "")
     _log("API key present" if api_key else "API key missing")
@@ -273,6 +288,7 @@ def _save_memory(project: str, messages: List[Any]) -> None:
 
 
 def _estimate_tokens(messages: List[Any]) -> int:
+    """Rough token estimate that also accounts for tool_calls metadata."""
     total_chars = 0
     for msg in messages:
         content = getattr(msg, "content", "")
@@ -286,7 +302,71 @@ def _estimate_tokens(messages: List[Any]) -> int:
                     total_chars += len(str(part))
         else:
             total_chars += len(str(content))
+        # Account for tool_calls metadata (function name + serialized args)
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls:
+            for tc in tool_calls:
+                total_chars += len(str(tc.get("name", "")))
+                total_chars += len(json.dumps(tc.get("args", {}), default=str))
+        # Account for tool_call_id on ToolMessages
+        tool_call_id = getattr(msg, "tool_call_id", None)
+        if tool_call_id:
+            total_chars += len(str(tool_call_id))
     return max(1, total_chars // 4)
+
+
+def _find_last_human_index(messages: List[Any]) -> int:
+    """Return the index of the last HumanMessage, or -1 if none found."""
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            return i
+    return -1
+
+
+def _compress_old_tool_messages(messages: List[Any], keep_recent: int = 10) -> List[Any]:
+    """
+    Compress tool call results in older messages to save tokens.
+    
+    For messages outside the most recent `keep_recent` messages:
+    - AI messages with tool_calls keep the tool_calls but get a short content note
+    - ToolMessages get their content truncated to a short summary
+    
+    This preserves the required message ordering (ai-with-tool_calls → tool-result)
+    that Gemini expects, while drastically reducing token usage.
+    """
+    if len(messages) <= keep_recent:
+        return messages
+
+    cutoff = len(messages) - keep_recent
+    compressed: List[Any] = []
+
+    for i, msg in enumerate(messages):
+        if i >= cutoff:
+            # Keep recent messages as-is
+            compressed.append(msg)
+            continue
+
+        if isinstance(msg, ToolMessage):
+            # Truncate tool result content
+            content = getattr(msg, "content", "")
+            if isinstance(content, str) and len(content) > 200:
+                short = content[:200].rstrip() + "... [truncated]"
+            else:
+                short = content
+            compressed.append(
+                ToolMessage(
+                    content=short,
+                    tool_call_id=getattr(msg, "tool_call_id", ""),
+                    name=getattr(msg, "name", None),
+                )
+            )
+        elif isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            # Keep tool_calls structure but add a compact content marker
+            compressed.append(msg)
+        else:
+            compressed.append(msg)
+
+    return compressed
 
 
 def _build_message_context(
@@ -294,7 +374,22 @@ def _build_message_context(
     summary: str,
     system_prompt: str,
 ) -> List[Any]:
+    """
+    Build the context window for the model call.
+    
+    Guarantees:
+    1. Always starts with SystemMessage(s)
+    2. Always contains at least one HumanMessage
+    3. Never returns only SystemMessages (which would crash Gemini)
+    4. Preserves AI→Tool message ordering
+    """
     recent = messages[-DEFAULT_RECENT_MESSAGES_LIMIT:]
+
+    # First compress old tool messages to save tokens
+    recent = _compress_old_tool_messages(recent, keep_recent=12)
+
+    # Try trim_messages, but with careful fallback
+    trimmed = None
     try:
         trimmed = trim_messages(
             recent,
@@ -304,15 +399,40 @@ def _build_message_context(
             start_on="human",
             allow_partial=False,
         )
-    except Exception:
-        trimmed = recent
+    except Exception as exc:
+        _log(f"trim_messages failed: {exc}")
+
+    # Validate trimmed result — must contain at least one non-system message
+    if not trimmed or len(trimmed) < MIN_CONTEXT_MESSAGES:
+        _log(
+            f"trim_messages produced too few messages ({len(trimmed) if trimmed else 0}), "
+            f"falling back to last-human-index strategy"
+        )
+        # Fallback: keep from the last human message onwards
+        last_human_idx = _find_last_human_index(recent)
+        if last_human_idx >= 0:
+            trimmed = recent[last_human_idx:]
+        else:
+            # No human message at all — synthesize one so Gemini doesn't crash
+            _log("WARN: No HumanMessage found in recent history, synthesizing one")
+            trimmed = [HumanMessage(content="Continue working on the current task.")] + recent[-4:]
+
+    # Double-check: ensure there's at least one HumanMessage
+    has_human = any(isinstance(m, HumanMessage) for m in trimmed)
+    if not has_human:
+        last_human_idx = _find_last_human_index(messages)  # search full history
+        if last_human_idx >= 0:
+            trimmed = [messages[last_human_idx]] + list(trimmed)
+        else:
+            trimmed = [HumanMessage(content="Continue working on the current task.")] + list(trimmed)
 
     context: List[Any] = [SystemMessage(content=system_prompt)]
     if summary:
         context.append(
             SystemMessage(
                 content=(
-                    "Conversation summary so far. Use this as memory and avoid repeating already completed work:\n"
+                    "Conversation summary so far. Use this as memory and avoid "
+                    "repeating already completed work:\n"
                     f"{summary}"
                 )
             )
@@ -337,17 +457,34 @@ def _render_message_for_summary(message: Any) -> str:
     return f"{role}: {text}"
 
 
-def _update_summary_if_needed(project: str, model: str, messages: List[Any], existing_summary: str) -> str:
+def _update_summary_if_needed(
+    project: str,
+    model: str,
+    messages: List[Any],
+    existing_summary: str,
+    force: bool = False,
+) -> str:
+    """
+    Summarize conversation history when tokens exceed the trigger threshold.
+    
+    When `force` is True, skip the token check (used for mid-run summaries).
+    The summary captures key decisions, completed work, and pending tasks
+    so trimmed messages don't cause context loss.
+    """
     estimated_tokens = _estimate_tokens(messages)
-    if estimated_tokens < DEFAULT_SUMMARY_TRIGGER_TOKENS:
+    if not force and estimated_tokens < DEFAULT_SUMMARY_TRIGGER_TOKENS:
         return existing_summary
 
+    _log(f"Summary triggered (tokens~{estimated_tokens}, force={force})")
+
+    # Build a compact transcript from the messages being summarized
     transcript_slice = messages[-80:]
     transcript = "\n\n".join(_render_message_for_summary(msg) for msg in transcript_slice)
     prompt = (
         "You maintain compact memory for a video editing coding agent.\n"
         "Merge the prior summary with the latest transcript into one concise, factual summary.\n"
         "Keep key user preferences, project decisions, completed work, pending tasks, and unresolved issues.\n"
+        "Include file paths, configurations, and technical details that the agent will need.\n"
         "Use plain bullet points and keep it under 1000 words.\n\n"
         f"Prior summary:\n{existing_summary or '(none)'}\n\n"
         f"Latest transcript:\n{transcript}"
@@ -458,14 +595,35 @@ def _build_initial_message(
 
 def _invoke_with_retry(model: ChatGoogleGenerativeAI, messages: List[Any]) -> Any:
     delays = [2, 4, 8]
-    for attempt, delay in enumerate([0] + delays):
+    max_attempts = len(delays) + 1
+
+    def _is_retryable(exc: Exception) -> bool:
+        message = str(exc).lower()
+        retryable_fragments = (
+            "429",
+            "500",
+            "502",
+            "503",
+            "504",
+            "resource_exhausted",
+            "unavailable",
+            "temporarily",
+            "rate limit",
+            "timeout",
+        )
+        return any(fragment in message for fragment in retryable_fragments)
+
+    for attempt in range(max_attempts):
         if attempt > 0:
-            _log(f"Retrying model call in {delay}s (attempt {attempt + 1}/{len(delays) + 1})")
+            delay = delays[attempt - 1]
+            _log(f"Retrying model call in {delay}s (attempt {attempt + 1}/{max_attempts})")
             time.sleep(delay)
+
+        _log(f"Model call attempt {attempt + 1}/{max_attempts}")
         try:
             return model.invoke(messages)
         except Exception as exc:
-            if attempt >= len(delays):
+            if attempt >= len(delays) or not _is_retryable(exc):
                 raise
             _log(f"Model call failed: {exc}")
 
@@ -474,18 +632,51 @@ def _build_graph(
     model: ChatGoogleGenerativeAI,
     tools: List[StructuredTool],
     system_prompt: str,
-    conversation_summary: str,
+    initial_summary: str,
     checkpointer: SqliteSaver,
+    project: str,
+    model_name: str,
 ) -> StateGraph:
     tool_node = ToolNode(tools)
+    # Mutable container so the summary can be updated mid-run
+    summary_holder = {"summary": initial_summary}
 
     def _call_model(state: AgentState) -> AgentState:
         state_messages = state["messages"]
-        context = _build_message_context(state_messages, conversation_summary, system_prompt)
+        current_step = state["step"]
+
+        # --- Mid-run summarization check ---
+        # Periodically check if we need to summarize to prevent context overflow.
+        # This is critical for long-running tool-heavy sessions where the agent
+        # might do 20+ tool calls on a single user request.
+        if current_step > 0 and current_step % SUMMARY_CHECK_INTERVAL == 0:
+            est_tokens = _estimate_tokens(state_messages)
+            if est_tokens > DEFAULT_SUMMARY_TRIGGER_TOKENS * 0.7:
+                _log(
+                    f"Mid-run summary check at step {current_step} "
+                    f"(est_tokens={est_tokens}, threshold={int(DEFAULT_SUMMARY_TRIGGER_TOKENS * 0.7)})"
+                )
+                summary_holder["summary"] = _update_summary_if_needed(
+                    project, model_name, state_messages,
+                    summary_holder["summary"], force=True,
+                )
+
+        context = _build_message_context(
+            state_messages, summary_holder["summary"], system_prompt
+        )
         _log(
-            f"Turn {state['step'] + 1}: invoking model "
+            f"Turn {current_step + 1}: invoking model "
             f"(state_messages={len(state_messages)}, context_messages={len(context)})"
         )
+
+        # Safety: verify context has at least one non-system message
+        non_system = [m for m in context if not isinstance(m, SystemMessage)]
+        if not non_system:
+            _log("CRITICAL: context has no non-system messages, injecting fallback")
+            context.append(
+                HumanMessage(content="Continue working on the current task.")
+            )
+
         response = _invoke_with_retry(model, context)
         tool_calls = getattr(response, "tool_calls", None) or []
         if tool_calls:
@@ -496,7 +687,7 @@ def _build_graph(
             preview = getattr(response, "text", None) or str(response)
             preview_clean = preview[:120].replace("\n", " ")
             _log(f"Model response preview: {preview_clean}")
-        return {"messages": [response], "step": state["step"] + 1}
+        return {"messages": [response], "step": current_step + 1}
 
     def _has_tool_calls(state: AgentState) -> str:
         messages = state["messages"]
@@ -571,7 +762,10 @@ def run_agent(
     checkpoint_path = _checkpoint_path(project)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     with SqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
-        graph = _build_graph(llm, tools, system_prompt, summary, checkpointer)
+        graph = _build_graph(
+            llm, tools, system_prompt, summary, checkpointer,
+            project=project, model_name=model,
+        )
         state = {"messages": [initial_message], "step": 0, "max_steps": max_steps}
         try:
             result = graph.invoke(
@@ -581,6 +775,16 @@ def run_agent(
                     "configurable": {"thread_id": project},
                 },
             )
+        except ValueError as ve:
+            if "contents are required" in str(ve):
+                _log(f"CRITICAL: Gemini rejected empty contents despite safeguards: {ve}")
+                # Return a helpful message instead of crashing
+                return (
+                    "I encountered a context error. The conversation history may have "
+                    "grown too large. Please try sending your request again — I've "
+                    "saved a summary of our work so far."
+                )
+            raise
         except ChatGoogleGenerativeAIError:
             key = os.getenv("GOOGLE_API_KEY", "")
             suffix = key[-6:] if key else "(missing)"

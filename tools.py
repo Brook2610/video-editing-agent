@@ -381,6 +381,19 @@ def apply_patch(patch: str) -> Dict[str, Any]:
     return {"applied": applied, "errors": errors}
 
 
+def _truncate_output(output: str, max_chars: int = 4000) -> str:
+    """Truncate output keeping both head and tail for context."""
+    if len(output) <= max_chars:
+        return output
+    head_chars = max_chars // 3       # ~1333 chars from start
+    tail_chars = max_chars - head_chars - 60  # rest from end
+    return (
+        output[:head_chars]
+        + f"\n\n... ({len(output) - head_chars - tail_chars} chars omitted) ...\n\n"
+        + output[-tail_chars:]
+    )
+
+
 def run_terminal(command: str, cwd: str = ".", timeout: int = 120) -> str:
     if not command or not command.strip():
         return "No command provided."
@@ -391,39 +404,106 @@ def run_terminal(command: str, cwd: str = ".", timeout: int = 120) -> str:
     if not workdir.exists() or not workdir.is_dir():
         return f"Working directory not found: {cwd}"
 
-    def _run(cmd: List[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+    # Cap timeout to prevent indefinitely blocking HTTP requests.
+    MAX_TIMEOUT = 600
+    timeout = max(10, min(timeout, MAX_TIMEOUT))
+
+    normalized_command = command.strip()
+    lowered_command = normalized_command.lower()
+    # Make npm install non-interactive to avoid hangs in tool-driven runs.
+    if lowered_command in {"npm install", "npm i"}:
+        normalized_command = normalized_command + " --no-audit --no-fund"
+
+    # Build the shell command
+    if os.name == "nt":
+        cmd = ["powershell", "-NoProfile", "-Command", normalized_command]
+    else:
+        cmd = ["/bin/bash", "-lc", normalized_command]
+
+    import threading
+
+    def _read_stream(stream, output_list):
+        """Read a stream line-by-line in a background thread to prevent deadlocks."""
+        try:
+            for line in stream:
+                output_list.append(line)
+        except Exception:
+            pass
+
+    try:
+        proc = subprocess.Popen(
             cmd,
             cwd=str(workdir),
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout,
         )
-
-    try:
-        # Prefer PowerShell on Windows, fallback to bash on Unix.
-        if os.name == "nt":
-            result = _run(["powershell", "-NoProfile", "-Command", command])
-        else:
-            result = _run(["/bin/bash", "-lc", command])
     except FileNotFoundError:
-        # Fallback if the preferred shell isn't available.
+        if os.name == "nt":
+            return "Command failed to run: PowerShell not found"
+        # Fallback shell
         try:
-            result = _run(["/bin/sh", "-lc", command])
+            proc = subprocess.Popen(
+                ["/bin/sh", "-lc", command],
+                cwd=str(workdir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
         except Exception as exc:
             return f"Command failed to run: {exc}"
-    except subprocess.TimeoutExpired:
-        return f"Command timed out after {timeout}s"
     except Exception as exc:
         return f"Command failed to run: {exc}"
 
-    output = (result.stdout or "") + (result.stderr or "")
-    output = output.strip()
-    if len(output) > 4000:
-        output = output[:4000] + "\n... (output truncated)"
-    return output or f"Command finished with exit code {result.returncode}"
+    # Read stdout and stderr in background threads to avoid pipe buffer deadlocks.
+    stdout_lines: List[str] = []
+    stderr_lines: List[str] = []
+    t_out = threading.Thread(target=_read_stream, args=(proc.stdout, stdout_lines), daemon=True)
+    t_err = threading.Thread(target=_read_stream, args=(proc.stderr, stderr_lines), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill the process and its children on timeout
+        try:
+            if os.name == "nt":
+                # On Windows, kill the entire process tree
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True, timeout=10,
+                )
+            else:
+                import signal
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+        # Wait for reader threads to finish
+        t_out.join(timeout=5)
+        t_err.join(timeout=5)
+
+        partial = ("".join(stdout_lines) + "".join(stderr_lines)).strip()
+        partial = _truncate_output(partial)
+        if partial:
+            return f"Command timed out after {timeout}s (process killed)\n{partial}"
+        return f"Command timed out after {timeout}s (process killed)"
+
+    # Wait for reader threads to finish (process already exited)
+    t_out.join(timeout=10)
+    t_err.join(timeout=10)
+
+    output = ("".join(stdout_lines) + "".join(stderr_lines)).strip()
+    output = _truncate_output(output)
+    return output or f"Command finished with exit code {proc.returncode}"
 
 
 def _write_wave_file(filename: Path, pcm_data: bytes, channels: int = 1, rate: int = 24000, sample_width: int = 2) -> None:
