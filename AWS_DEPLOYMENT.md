@@ -16,6 +16,7 @@
 - Runtime directory: `/opt/video-editing-agent`
 - Service: `video-editing-agent.service`
 - Reverse proxy: Nginx on port `80`
+- SSM managed instance: online
 
 ## Runtime Stack
 
@@ -31,7 +32,8 @@
 
 - Security group: `sg-0075a86f9d082d1ff`
 - HTTP `80`: currently restricted to Brook's current IP while the app has no auth
-- SSH `22`: initially restricted during manual setup; GitHub Actions deployment may require broader SSH or an OIDC/SSM deployment path
+- SSH `22`: restricted to Brook's current IPs for manual administration
+- GitHub Actions deploys through AWS Systems Manager (SSM), so SSH does not need to be opened for CI/CD
 
 Do not open HTTP publicly until auth/rate limits/upload controls are added.
 
@@ -76,12 +78,24 @@ GitHub Actions workflow:
 .github/workflows/deploy-aws.yml
 ```
 
-Required GitHub secrets:
+The workflow uses GitHub OIDC to assume this AWS role:
 
-- `VIDEO_AGENT_HOST`
-- `VIDEO_AGENT_USER`
-- `VIDEO_AGENT_SSH_KEY`
-- `VIDEO_AGENT_KNOWN_HOSTS`
+- `arn:aws:iam::460294045578:role/video-editor-agent-github-deploy-role`
+
+AWS IAM resources:
+
+- EC2 SSM role: `video-editor-agent-ec2-ssm-role`
+- EC2 instance profile: `video-editor-agent-ec2-ssm-profile`
+- GitHub OIDC provider: `arn:aws:iam::460294045578:oidc-provider/token.actions.githubusercontent.com`
+- GitHub deploy role: `video-editor-agent-github-deploy-role`
+
+Then it runs this SSM command on the EC2 instance:
+
+```bash
+bash /opt/video-editing-agent/scripts/deploy_aws.sh
+```
+
+No SSH private key is needed for GitHub Actions.
 
 ## Verified Checks
 

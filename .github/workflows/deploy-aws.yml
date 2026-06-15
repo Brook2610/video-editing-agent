@@ -9,16 +9,32 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
-      - name: Install SSH key
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.VIDEO_AGENT_SSH_KEY }}" > ~/.ssh/video_agent_key
-          chmod 600 ~/.ssh/video_agent_key
-          printf '%s\n' "${{ secrets.VIDEO_AGENT_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::460294045578:role/video-editor-agent-github-deploy-role
+          aws-region: us-east-1
 
-      - name: Deploy on EC2
+      - name: Deploy through SSM
         run: |
-          ssh -i ~/.ssh/video_agent_key \
-            "${{ secrets.VIDEO_AGENT_USER }}@${{ secrets.VIDEO_AGENT_HOST }}" \
-            'bash /opt/video-editing-agent/scripts/deploy_aws.sh'
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids i-00057e17c9458f370 \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy video-editing-agent from GitHub Actions" \
+            --parameters commands='["bash /opt/video-editing-agent/scripts/deploy_aws.sh"]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "Command ID: $COMMAND_ID"
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id i-00057e17c9458f370
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id i-00057e17c9458f370 \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}'
