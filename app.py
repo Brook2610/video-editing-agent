@@ -16,9 +16,18 @@ from fastapi.templating import Jinja2Templates
 
 import shutil
 
-from agent import run_agent
-import events
-from tools import PROJECTS_ROOT
+try:
+    from agent import run_agent
+    import events
+    from tools import PROJECTS_ROOT
+except ModuleNotFoundError:
+    # Fallback for launch contexts where this file's directory isn't on sys.path.
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from agent import run_agent
+    import events
+    from tools import PROJECTS_ROOT
 
 # Initialize App
 app = FastAPI(title="Video Editing Agent")
@@ -186,7 +195,7 @@ def _save_upload(session_id: str, upload: UploadFile) -> Path:
 # Routes
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
-    return TEMPLATES.TemplateResponse("index.html", {"request": request})
+    return TEMPLATES.TemplateResponse(request, "index.html", {"request": request})
 
 
 @app.get("/api/sessions")

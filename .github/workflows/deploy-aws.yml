@@ -1,0 +1,24 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches:
+      - modification-branch
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VIDEO_AGENT_SSH_KEY }}" > ~/.ssh/video_agent_key
+          chmod 600 ~/.ssh/video_agent_key
+          printf '%s\n' "${{ secrets.VIDEO_AGENT_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Deploy on EC2
+        run: |
+          ssh -i ~/.ssh/video_agent_key \
+            "${{ secrets.VIDEO_AGENT_USER }}@${{ secrets.VIDEO_AGENT_HOST }}" \
+            'bash /opt/video-editing-agent/scripts/deploy_aws.sh'
