@@ -1,0 +1,13 @@
+{
+  "InstanceIds": ["i-00057e17c9458f370"],
+  "DocumentName": "AWS-RunShellScript",
+  "Comment": "Check Azure model env for video-editing-agent",
+  "Parameters": {
+    "commands": [
+      "systemctl is-active video-editing-agent",
+      "cd /opt/video-editing-agent && .venv/bin/python -c 'import langchain_openai; print(\"langchain_openai_ok\")'",
+      "grep -E '^(AZURE_AI_ENDPOINT|VIDEO_AGENT_DEFAULT_MODEL|AZURE_AI_API_KEY)=' /opt/video-editing-agent/.env | sed 's/AZURE_AI_API_KEY=.*/AZURE_AI_API_KEY=***redacted***/'",
+      "journalctl -u video-editing-agent -n 20 --no-pager"
+    ]
+  }
+}

@@ -111,6 +111,14 @@ Model picker:
 
 Both are served from the Azure AI resource `panastra` in `rg-firstproject`.
 
+The Azure key is stored in AWS SSM Parameter Store as a SecureString:
+
+```text
+/video-editing-agent/AZURE_AI_API_KEY
+```
+
+The EC2 instance role has read access to `/video-editing-agent/*` parameters, and the live `.env` has been configured from that parameter.
+
 If another edit is running, the app returns HTTP `409` with:
 
 ```text

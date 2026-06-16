@@ -1,0 +1,10 @@
+{
+  "InstanceIds": ["i-00057e17c9458f370"],
+  "DocumentName": "AWS-RunShellScript",
+  "Comment": "Configure Azure AI env for video-editing-agent",
+  "Parameters": {
+    "commands": [
+      "bash -lc 'set -e; if ! command -v aws >/dev/null 2>&1; then snap install aws-cli --classic; fi; export AZURE_KEY=$(aws ssm get-parameter --name /video-editing-agent/AZURE_AI_API_KEY --with-decryption --region us-east-1 --query Parameter.Value --output text); python3 - <<\"PY\"\nfrom pathlib import Path\nimport os\npath = Path(\"/opt/video-editing-agent/.env\")\nupdates = {\n    \"AZURE_AI_ENDPOINT\": \"https://panastra.services.ai.azure.com/\",\n    \"VIDEO_AGENT_DEFAULT_MODEL\": \"Kimi-K2.6-1\",\n    \"AZURE_AI_API_KEY\": os.environ[\"AZURE_KEY\"],\n}\nlines = []\nseen = set()\nif path.exists():\n    for raw in path.read_text(encoding=\"utf-8\", errors=\"ignore\").splitlines():\n        if not raw.strip() or raw.lstrip().startswith(\"#\") or \"=\" not in raw:\n            lines.append(raw)\n            continue\n        key = raw.split(\"=\", 1)[0]\n        if key in updates:\n            lines.append(f\"{key}={updates[key]}\")\n            seen.add(key)\n        else:\n            lines.append(raw)\nfor key, value in updates.items():\n    if key not in seen:\n        lines.append(f\"{key}={value}\")\npath.write_text(\"\\n\".join(lines) + \"\\n\", encoding=\"utf-8\")\nPY\nchown ubuntu:ubuntu /opt/video-editing-agent/.env; chmod 600 /opt/video-editing-agent/.env; systemctl restart video-editing-agent'"
+    ]
+  }
+}
