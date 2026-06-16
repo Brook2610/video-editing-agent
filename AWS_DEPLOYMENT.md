@@ -9,8 +9,10 @@
 - Instance ID: `i-00057e17c9458f370`
 - Instance type: `t3.small`
 - Root disk: 30 GB `gp3`
-- Public IP: `100.58.230.206`
-- App URL: `http://100.58.230.206/`
+- Elastic IP: `98.90.61.234`
+- HTTPS URL: `https://va.panastra.tech/`
+- CloudFront distribution: `E12AZ72PQ0NE48`
+- CloudFront domain: `d3lqieog9dcfwg.cloudfront.net`
 - GitHub repo: `https://github.com/Brook2610/video-editing-agent`
 - Deployed branch: `modification-branch`
 - Last verified deployed commit: `565f12a`
@@ -24,7 +26,7 @@
 - Ubuntu 24.04
 - Python virtualenv at `/opt/video-editing-agent/.venv`
 - FastAPI served by Uvicorn on `127.0.0.1:8000`
-- Nginx proxies public port `80` to Uvicorn
+- Nginx proxies port `80` to Uvicorn; public traffic reaches it through CloudFront
 - Node.js 20
 - npm
 - ffmpeg / ffprobe
@@ -32,11 +34,36 @@
 ## Security Group
 
 - Security group: `sg-0075a86f9d082d1ff`
-- HTTP `80`: currently restricted to Brook's current IP while the app has no auth
+- HTTP `80`: restricted to the AWS managed CloudFront origin-facing prefix list `pl-3b927c52`
 - SSH `22`: restricted to Brook's current IPs for manual administration
 - GitHub Actions deploys through AWS Systems Manager (SSM), so SSH does not need to be opened for CI/CD
 
-Do not open HTTP publicly until auth/rate limits/upload controls are added.
+Do not open direct EC2 HTTP publicly. Use CloudFront/HTTPS only.
+
+## HTTPS And DNS
+
+CloudFront:
+
+- Distribution ID: `E12AZ72PQ0NE48`
+- Domain: `d3lqieog9dcfwg.cloudfront.net`
+- Alias: `va.panastra.tech`
+- Origin: `ec2-98-90-61-234.compute-1.amazonaws.com`
+- Viewer protocol policy: redirect HTTP to HTTPS
+- Origin protocol: HTTP only
+- Cache policy: AWS managed `CachingDisabled`
+- Origin request policy: AWS managed `AllViewerExceptHostHeader`
+
+Wildcard ACM certificate:
+
+- ARN: `arn:aws:acm:us-east-1:460294045578:certificate/aeaad7f5-44a4-452c-8fdb-cc24c0f608d5`
+- Domains: `*.panastra.tech`, `panastra.tech`
+- Status: `ISSUED`
+- Validation CNAME: `_fc860230c29f2b99b0e36b0f36f653a8.panastra.tech -> _a6787104b94e1082cc3c29719be895de.jkddzztszm.acm-validations.aws`
+
+DNS:
+
+- DNS host: `ns1.hostns.io` / `ns2.hostns.io`
+- App CNAME: `va.panastra.tech -> d3lqieog9dcfwg.cloudfront.net`
 
 ## Environment Variables
 
@@ -128,6 +155,9 @@ After initial deployment:
 - `GET /` returned HTTP `200`
 - `GET /api/sessions` returned HTTP `200` with `{"sessions":[]}`
 - `GET /api/health` returned HTTP `200` with configured showcase limits
+- `GET https://va.panastra.tech/` returned HTTP `200`
+- `GET https://va.panastra.tech/api/health` returned HTTP `200`
+- `GET http://va.panastra.tech/api/health` redirected to HTTPS and returned HTTP `200`
 - `GET /static/app.js` returned HTTP `200`
 - `video-editing-agent.service` was active
 - `nginx` was active
