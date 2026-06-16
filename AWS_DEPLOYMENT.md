@@ -56,6 +56,29 @@ Expected keys:
 - `LANGSMITH_API_KEY`
 - `GEMINI_MODEL=gemini-3-flash-preview`
 - `AGENT_MAX_STEPS=100`
+- `MAX_UPLOAD_FILE_MB=200`
+- `MAX_SESSION_ASSET_MB=500`
+- `MAX_FILES_PER_UPLOAD=10`
+- `MAX_FILES_PER_SESSION=50`
+- `MAX_PROMPTS_PER_IP_PER_HOUR=15`
+
+## Showcase Limits
+
+The app intentionally has no password yet, but it has hard demo limits:
+
+- Maximum upload size: 200 MB per file
+- Maximum session asset storage: 500 MB
+- Maximum files per upload: 10
+- Maximum files per session: 50
+- Allowed upload extensions: `.mp4`, `.mov`, `.webm`, `.mp3`, `.wav`, `.m4a`, `.jpg`, `.jpeg`, `.png`
+- Maximum prompts: 15 per IP per hour
+- Maximum concurrent agent/edit jobs: 1
+
+If another edit is running, the app returns HTTP `409` with:
+
+```text
+The demo is currently busy with another edit. Please try again in a few minutes.
+```
 
 ## Deploy From GitHub
 
@@ -104,6 +127,7 @@ After initial deployment:
 
 - `GET /` returned HTTP `200`
 - `GET /api/sessions` returned HTTP `200` with `{"sessions":[]}`
+- `GET /api/health` returned HTTP `200` with configured showcase limits
 - `GET /static/app.js` returned HTTP `200`
 - `video-editing-agent.service` was active
 - `nginx` was active
@@ -113,16 +137,15 @@ After initial deployment:
 ## Known Gaps Before Public Launch
 
 - No authentication yet
-- No rate limits yet
-- Upload and render abuse controls still needed
+- No password/auth yet by design
+- Monthly/daily disk cleanup still needed
 - No custom HTTPS domain yet
 - No automated backup for `/opt/video-editing-agent/projects`
 - No cleanup policy for old uploaded assets/renders
 
 Recommended next hardening pass:
 
-1. Add login/basic auth before opening HTTP publicly.
-2. Add upload size/count limits in the app and Nginx.
-3. Add project/output cleanup policy.
-4. Add HTTPS via CloudFront and a subdomain, similar to News Claw.
-5. Add S3 backups or sync for `projects/` if outputs need to persist.
+1. Add project/output cleanup policy.
+2. Add HTTPS via CloudFront and a subdomain, similar to News Claw.
+3. Add S3 backups or sync for `projects/` if outputs need to persist.
+4. Reconsider a simple demo password before broad public sharing.

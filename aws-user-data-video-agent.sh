@@ -43,6 +43,11 @@ sudo -u "$APP_USER" "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.t
 cat > "$APP_DIR/.env" <<'EOF'
 GEMINI_MODEL=gemini-3-flash-preview
 AGENT_MAX_STEPS=100
+MAX_UPLOAD_FILE_MB=200
+MAX_SESSION_ASSET_MB=500
+MAX_FILES_PER_UPLOAD=10
+MAX_FILES_PER_SESSION=50
+MAX_PROMPTS_PER_IP_PER_HOUR=15
 EOF
 chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
 chmod 600 "$APP_DIR/.env"

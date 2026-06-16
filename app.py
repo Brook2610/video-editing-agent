@@ -6,7 +6,10 @@ import re
 from datetime import datetime
 import asyncio
 import uuid
+from collections import defaultdict, deque
 from pathlib import Path
+from threading import Lock
+from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -37,6 +40,27 @@ TEMPLATES_DIR = BASE_DIR / "templates" / "remotion-base"
 WEB_DIR = BASE_DIR / "web"
 TEMPLATES = Jinja2Templates(directory=str(WEB_DIR / "templates"))
 
+MB = 1024 * 1024
+MAX_UPLOAD_FILE_BYTES = int(os.getenv("MAX_UPLOAD_FILE_MB", "200")) * MB
+MAX_SESSION_ASSET_BYTES = int(os.getenv("MAX_SESSION_ASSET_MB", "500")) * MB
+MAX_FILES_PER_UPLOAD = int(os.getenv("MAX_FILES_PER_UPLOAD", "10"))
+MAX_FILES_PER_SESSION = int(os.getenv("MAX_FILES_PER_SESSION", "50"))
+MAX_PROMPTS_PER_IP_PER_HOUR = int(os.getenv("MAX_PROMPTS_PER_IP_PER_HOUR", "15"))
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ext.strip().lower()
+    for ext in os.getenv(
+        "ALLOWED_UPLOAD_EXTENSIONS",
+        ".mp4,.mov,.webm,.mp3,.wav,.m4a,.jpg,.jpeg,.png",
+    ).split(",")
+    if ext.strip()
+}
+PROMPT_RATE_WINDOW_SECONDS = 60 * 60
+
+_job_lock = Lock()
+_job_started_at: Optional[float] = None
+_prompt_rate_lock = Lock()
+_prompt_rate_by_ip: Dict[str, deque[float]] = defaultdict(deque)
+
 app.mount("/static", StaticFiles(directory=str(WEB_DIR / "static")), name="static")
 
 
@@ -62,6 +86,97 @@ def _assets_dir(session_id: str) -> Path:
 def _outputs_dir(session_id: str) -> Path:
     """Returns the out directory where Remotion renders videos."""
     return _session_dir(session_id) / "out"
+
+
+def _client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip() or "unknown"
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _directory_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    total = 0
+    for item in path.rglob("*"):
+        if item.is_file():
+            try:
+                total += item.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def _file_count(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.rglob("*") if item.is_file())
+
+
+def _limits_payload() -> Dict[str, Any]:
+    return {
+        "max_upload_file_mb": MAX_UPLOAD_FILE_BYTES // MB,
+        "max_session_asset_mb": MAX_SESSION_ASSET_BYTES // MB,
+        "max_files_per_upload": MAX_FILES_PER_UPLOAD,
+        "max_files_per_session": MAX_FILES_PER_SESSION,
+        "max_prompts_per_ip_per_hour": MAX_PROMPTS_PER_IP_PER_HOUR,
+        "max_concurrent_jobs": 1,
+        "allowed_upload_extensions": sorted(ALLOWED_UPLOAD_EXTENSIONS),
+    }
+
+
+def _validate_upload_batch_or_response(session_id: str, files: List[UploadFile]) -> Optional[JSONResponse]:
+    if len(files) > MAX_FILES_PER_UPLOAD:
+        return JSONResponse(
+            {"error": f"Too many files. Maximum {MAX_FILES_PER_UPLOAD} files per upload."},
+            status_code=413,
+        )
+
+    assets = _assets_dir(session_id)
+    existing_count = _file_count(assets)
+    if existing_count + len(files) > MAX_FILES_PER_SESSION:
+        return JSONResponse(
+            {"error": f"Session file limit exceeded. Maximum {MAX_FILES_PER_SESSION} asset files per session."},
+            status_code=413,
+        )
+
+    for upload in files:
+        suffix = Path(upload.filename or "").suffix.lower()
+        if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
+            return JSONResponse(
+                {
+                    "error": (
+                        f"Unsupported file type '{suffix or 'unknown'}'. "
+                        f"Allowed: {', '.join(sorted(ALLOWED_UPLOAD_EXTENSIONS))}"
+                    )
+                },
+                status_code=415,
+            )
+    return None
+
+
+def _check_prompt_rate_or_response(request: Request) -> Optional[JSONResponse]:
+    client_ip = _client_ip(request)
+    now = monotonic()
+    with _prompt_rate_lock:
+        timestamps = _prompt_rate_by_ip[client_ip]
+        while timestamps and now - timestamps[0] > PROMPT_RATE_WINDOW_SECONDS:
+            timestamps.popleft()
+        if len(timestamps) >= MAX_PROMPTS_PER_IP_PER_HOUR:
+            return JSONResponse(
+                {
+                    "error": (
+                        f"Demo prompt limit reached for this IP. "
+                        f"Maximum {MAX_PROMPTS_PER_IP_PER_HOUR} prompts per hour."
+                    )
+                },
+                status_code=429,
+            )
+        timestamps.append(now)
+    return None
 
 
 def _ensure_session(session_id: str) -> Path:
@@ -180,22 +295,39 @@ def _list_outputs(session_id: str) -> List[Dict[str, Any]]:
 def _save_upload(session_id: str, upload: UploadFile) -> Path:
     _ensure_session(session_id)
     assets = _assets_dir(session_id)
+    session_size_before = _directory_size(assets)
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
     safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", upload.filename or "upload")
     target = assets / f"{timestamp}_{uuid.uuid4().hex[:8]}_{safe_name}"
-    with target.open("wb") as handle:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            handle.write(chunk)
-    upload.file.close()
+    written = 0
+    try:
+        with target.open("wb") as handle:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > MAX_UPLOAD_FILE_BYTES:
+                    raise ValueError(f"File is too large. Maximum {MAX_UPLOAD_FILE_BYTES // MB} MB per file.")
+                if session_size_before + written > MAX_SESSION_ASSET_BYTES:
+                    raise ValueError(f"Session asset limit exceeded. Maximum {MAX_SESSION_ASSET_BYTES // MB} MB per session.")
+                handle.write(chunk)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    finally:
+        upload.file.close()
     return target
 
 # Routes
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(request, "index.html", {"request": request})
+
+
+@app.get("/api/health")
+def health() -> JSONResponse:
+    return JSONResponse({"status": "healthy", "limits": _limits_payload()})
 
 
 @app.get("/api/sessions")
@@ -272,6 +404,7 @@ def get_asset_file(session_id: str, filename: str) -> Any:
 
 @app.post("/api/sessions/{session_id}/message")
 def send_message(
+    request: Request,
     session_id: str,
     message: str = Form(...),
     model: Optional[str] = Form(None),
@@ -279,6 +412,13 @@ def send_message(
     files: List[UploadFile] = File(default=[]),
 ) -> JSONResponse:
     _ensure_session(session_id)
+    rate_error = _check_prompt_rate_or_response(request)
+    if rate_error:
+        return rate_error
+
+    upload_error = _validate_upload_batch_or_response(session_id, files)
+    if upload_error:
+        return upload_error
 
     selected_assets: List[str] = []
     if asset_names:
@@ -307,15 +447,29 @@ def send_message(
     else:
         model_name = "gemini-3.1-pro-preview"
 
+    global _job_started_at
+    if not _job_lock.acquire(blocking=False):
+        return JSONResponse(
+            {"error": "The demo is currently busy with another edit. Please try again in a few minutes."},
+            status_code=409,
+        )
+
     print(f"[video-agent] Using model: {model_name}")
-    response_text = run_agent(
-        video_source="none",
-        request=message,
-        project=session_id,
-        model=model_name,
-        max_steps=int(os.getenv("AGENT_MAX_STEPS", "100")),
-        assets=saved_assets or None,
-    )
+    _job_started_at = monotonic()
+    try:
+        response_text = run_agent(
+            video_source="none",
+            request=message,
+            project=session_id,
+            model=model_name,
+            max_steps=int(os.getenv("AGENT_MAX_STEPS", "100")),
+            assets=saved_assets or None,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=413)
+    finally:
+        _job_started_at = None
+        _job_lock.release()
 
     return JSONResponse({"reply": response_text})
 
@@ -385,10 +539,17 @@ def upload_assets(
     files: List[UploadFile] = File(...),
 ) -> JSONResponse:
     _ensure_session(session_id)
+    upload_error = _validate_upload_batch_or_response(session_id, files)
+    if upload_error:
+        return upload_error
+
     saved_files = []
-    for upload in files:
-        saved = _save_upload(session_id, upload)
-        saved_files.append(saved.name)
+    try:
+        for upload in files:
+            saved = _save_upload(session_id, upload)
+            saved_files.append(saved.name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=413)
     return JSONResponse({"uploaded": saved_files})
 
 

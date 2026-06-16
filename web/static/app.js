@@ -958,6 +958,11 @@ async function sendMessage() {
         const loader = document.getElementById(loadingId);
         if (loader) loader.remove();
         
+        if (!res.ok || data.error) {
+            renderMessage("ai", data.error || "Request failed. Please try again.");
+            return;
+        }
+
         renderMessage("ai", data.reply || "Done.");
         loadAssets(); // Refresh assets as agent might have created output
         loadOutputs(); // Refresh outputs as agent might have rendered video
@@ -1014,6 +1019,8 @@ async function uploadFiles(files, options = {}) {
             body: form
         });
         
+        const data = await res.json().catch(() => ({}));
+
         if (res.ok) {
             loadAssets();
         } else {
@@ -1022,7 +1029,7 @@ async function uploadFiles(files, options = {}) {
                 const size = card.querySelector(".asset-size");
                 if (size) size.textContent = "Upload failed";
             });
-            alert("Upload failed.");
+            alert("Upload failed: " + (data.error || "Please check the file limits and try again."));
         }
     } catch (e) {
         console.error(e);
