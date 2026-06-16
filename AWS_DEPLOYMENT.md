@@ -13,6 +13,7 @@
 - App URL: `http://100.58.230.206/`
 - GitHub repo: `https://github.com/Brook2610/video-editing-agent`
 - Deployed branch: `modification-branch`
+- Last verified deployed commit: `565f12a`
 - Runtime directory: `/opt/video-editing-agent`
 - Service: `video-editing-agent.service`
 - Reverse proxy: Nginx on port `80`
@@ -107,6 +108,7 @@ After initial deployment:
 - `video-editing-agent.service` was active
 - `nginx` was active
 - Root disk had about 25 GB free after setup
+- GitHub Actions workflow `Deploy to AWS EC2` completed successfully through SSM after commit `565f12a`.
 
 ## Known Gaps Before Public Launch
 
