@@ -82,6 +82,9 @@ Expected keys:
 - `GOOGLE_API_KEY`
 - `LANGSMITH_API_KEY`
 - `GEMINI_MODEL=gemini-3-flash-preview`
+- `VIDEO_AGENT_DEFAULT_MODEL=Kimi-K2.6-1`
+- `AZURE_AI_ENDPOINT=https://panastra.services.ai.azure.com/`
+- `AZURE_AI_API_KEY`
 - `AGENT_MAX_STEPS=100`
 - `MAX_UPLOAD_FILE_MB=200`
 - `MAX_SESSION_ASSET_MB=500`
@@ -100,6 +103,13 @@ The app intentionally has no password yet, but it has hard demo limits:
 - Allowed upload extensions: `.mp4`, `.mov`, `.webm`, `.mp3`, `.wav`, `.m4a`, `.jpg`, `.jpeg`, `.png`
 - Maximum prompts: 15 per IP per hour
 - Maximum concurrent agent/edit jobs: 1
+
+Model picker:
+
+- Default: `Kimi-K2.6-1`
+- Alternative: `gpt-5.5`
+
+Both are served from the Azure AI resource `panastra` in `rg-firstproject`.
 
 If another edit is running, the app returns HTTP `409` with:
 

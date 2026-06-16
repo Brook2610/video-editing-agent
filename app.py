@@ -55,6 +55,12 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     if ext.strip()
 }
 PROMPT_RATE_WINDOW_SECONDS = 60 * 60
+MODEL_OPTIONS = {
+    "kimi": "Kimi-K2.6-1",
+    "gpt55": "gpt-5.5",
+    "Kimi-K2.6-1": "Kimi-K2.6-1",
+    "gpt-5.5": "gpt-5.5",
+}
 
 _job_lock = Lock()
 _job_started_at: Optional[float] = None
@@ -440,12 +446,8 @@ def send_message(
         if str(target).lower().startswith(str(assets_dir).lower()) and target.exists():
             saved_assets.append(str(target))
 
-    model_choice = (model or "flash").strip().lower()
-    if model_choice != "pro":
-        model_choice = "flash"
-        model_name = f"gemini-3-{model_choice}-preview"
-    else:
-        model_name = "gemini-3.1-pro-preview"
+    model_choice = (model or "kimi").strip()
+    model_name = MODEL_OPTIONS.get(model_choice) or MODEL_OPTIONS.get(model_choice.lower(), "Kimi-K2.6-1")
 
     global _job_started_at
     if not _job_lock.acquire(blocking=False):

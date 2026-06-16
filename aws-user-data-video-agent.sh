@@ -42,6 +42,8 @@ sudo -u "$APP_USER" "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.t
 
 cat > "$APP_DIR/.env" <<'EOF'
 GEMINI_MODEL=gemini-3-flash-preview
+VIDEO_AGENT_DEFAULT_MODEL=Kimi-K2.6-1
+AZURE_AI_ENDPOINT=https://panastra.services.ai.azure.com/
 AGENT_MAX_STEPS=100
 MAX_UPLOAD_FILE_MB=200
 MAX_SESSION_ASSET_MB=500

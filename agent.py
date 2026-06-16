@@ -25,6 +25,7 @@ from langchain_core.messages import (
 from langchain_core.tools import StructuredTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai.chat_models import ChatGoogleGenerativeAIError
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
@@ -34,7 +35,7 @@ from tools import PROJECTS_ROOT, ToolSpec, get_tools, ctx_project_id
 
 BASE_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = BASE_DIR / "prompt.txt"
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+DEFAULT_MODEL = os.getenv("VIDEO_AGENT_DEFAULT_MODEL", "Kimi-K2.6-1")
 DEFAULT_MAX_STEPS = int(os.getenv("AGENT_MAX_STEPS", "100"))
 LOG_PREFIX = "[video-agent]"
 MAX_INLINE_BYTES = 20 * 1024 * 1024
@@ -94,6 +95,38 @@ def _load_env() -> None:
         os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
         os.environ.setdefault("LANGSMITH_PROJECT", "video-editing-agent")
         _log("LangSmith tracing enabled")
+
+    azure_key = os.getenv("AZURE_AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+    if azure_key:
+        _log("Azure AI key present")
+    if os.getenv("AZURE_AI_ENDPOINT"):
+        _log(f"Azure AI endpoint: {os.getenv('AZURE_AI_ENDPOINT')}")
+
+
+def _is_gemini_model(model: str) -> bool:
+    return str(model or "").lower().startswith("gemini-")
+
+
+def _build_chat_model(model: str, temperature: float = 1.0) -> Any:
+    if _is_gemini_model(model):
+        return ChatGoogleGenerativeAI(
+            model=model,
+            temperature=temperature,
+            max_retries=2,
+        )
+
+    azure_key = os.getenv("AZURE_AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+    if not azure_key:
+        raise RuntimeError("Missing AZURE_AI_API_KEY or AZURE_OPENAI_API_KEY in environment")
+
+    endpoint = os.getenv("AZURE_AI_ENDPOINT", "https://panastra.services.ai.azure.com/").rstrip("/")
+    return ChatOpenAI(
+        model=model,
+        api_key=azure_key,
+        base_url=f"{endpoint}/models",
+        timeout=120,
+        max_retries=2,
+    )
 
 
 def _read_prompt() -> str:
@@ -490,11 +523,7 @@ def _update_summary_if_needed(
         f"Latest transcript:\n{transcript}"
     )
 
-    summarizer = ChatGoogleGenerativeAI(
-        model=model,
-        temperature=0.2,
-        max_retries=2,
-    )
+    summarizer = _build_chat_model(model, temperature=0.2)
     try:
         response = _invoke_with_retry(
             summarizer,
@@ -560,7 +589,7 @@ def _build_system_prompt(request: str, project: str) -> str:
 
 
 def _build_initial_message(
-    client: genai.Client,
+    client: Optional[genai.Client],
     project: str,
     request: str,
     video_source: str,
@@ -575,25 +604,30 @@ def _build_initial_message(
     parts: List[Dict[str, Any]] = []
     inline_assets: List[str] = []
     large_assets: List[str] = []
-    if video_source and video_source.lower() not in {"none", "no-video", "-"}:
+    allow_inline_assets = client is not None
+
+    if client and video_source and video_source.lower() not in {"none", "no-video", "-"}:
         _log("Preparing video input")
         parts.append(_build_video_input(client, video_source))
-    if assets:
+    if client and assets:
         _log(f"Preparing {len(assets)} asset(s)")
         asset_blocks, inline_assets, large_assets = _build_asset_blocks(client, assets)
         parts.extend(asset_blocks)
+    elif assets:
+        large_assets = [Path(asset).name for asset in assets]
+        _log("Azure model selected; assets will be referenced through file tools instead of inline Gemini blocks")
     if large_assets:
         user_text += "Large assets available (use tools to inspect_asset): " + ", ".join(large_assets) + "\n"
     if inline_assets:
         user_text += "Inline assets attached: " + ", ".join(inline_assets) + "\n"
     parts.append({"type": "text", "text": user_text})
-    if parts and len(parts) > 1:
+    if allow_inline_assets and parts and len(parts) > 1:
         return HumanMessage(content=parts)
     _log("No video provided; using text-only request")
     return HumanMessage(content=user_text)
 
 
-def _invoke_with_retry(model: ChatGoogleGenerativeAI, messages: List[Any]) -> Any:
+def _invoke_with_retry(model: Any, messages: List[Any]) -> Any:
     delays = [2, 4, 8]
     max_attempts = len(delays) + 1
 
@@ -629,7 +663,7 @@ def _invoke_with_retry(model: ChatGoogleGenerativeAI, messages: List[Any]) -> An
 
 
 def _build_graph(
-    model: ChatGoogleGenerativeAI,
+    model: Any,
     tools: List[StructuredTool],
     system_prompt: str,
     initial_summary: str,
@@ -722,8 +756,11 @@ def run_agent(
 
     _load_env()
 
-    if not os.getenv("GOOGLE_API_KEY"):
+    using_gemini = _is_gemini_model(model)
+    if using_gemini and not os.getenv("GOOGLE_API_KEY"):
         raise RuntimeError("Missing GOOGLE_API_KEY in environment")
+    if not using_gemini and not (os.getenv("AZURE_AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")):
+        raise RuntimeError("Missing AZURE_AI_API_KEY or AZURE_OPENAI_API_KEY in environment")
 
     _log(f"Model: {model}")
     _log(f"Project: {project}")
@@ -731,17 +768,13 @@ def run_agent(
     _log(f"Request: {request}")
     _log(f"Video source: {video_source}")
 
-    client = genai.Client()
+    client = genai.Client() if using_gemini else None
     system_prompt = _build_system_prompt(request, project)
     tools = _build_tools()
     tool_names = ", ".join(t.name for t in tools)
     _log(f"Tools: {tool_names}")
 
-    llm = ChatGoogleGenerativeAI(
-        model=model,
-        temperature=1.0,
-        max_retries=2,
-    ).bind_tools(tools)
+    llm = _build_chat_model(model, temperature=1.0).bind_tools(tools)
 
     summary = _load_summary(project)
     if summary:
