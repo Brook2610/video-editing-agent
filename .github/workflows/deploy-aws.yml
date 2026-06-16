@@ -25,7 +25,7 @@ jobs:
             --instance-ids i-00057e17c9458f370 \
             --document-name AWS-RunShellScript \
             --comment "Deploy video-editing-agent from GitHub Actions" \
-            --parameters commands='["bash /opt/video-editing-agent/scripts/deploy_aws.sh"]' \
+            --parameters commands='["cd /opt/video-editing-agent && git -c safe.directory=/opt/video-editing-agent fetch origin modification-branch && git -c safe.directory=/opt/video-editing-agent reset --hard origin/modification-branch && chown -R ubuntu:ubuntu /opt/video-editing-agent", "bash /opt/video-editing-agent/scripts/deploy_aws.sh"]' \
             --query 'Command.CommandId' \
             --output text)
 

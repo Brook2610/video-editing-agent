@@ -28,4 +28,5 @@ as_app_user "$APP_DIR/.venv/bin/pip" install -r requirements.txt
 sudo systemctl restart video-editing-agent
 sudo systemctl reload nginx
 
-echo "Deployed $(git rev-parse --short HEAD) from $BRANCH at $(date -Is)"
+DEPLOYED_COMMIT="$(as_app_user git -C "$APP_DIR" rev-parse --short HEAD)"
+echo "Deployed $DEPLOYED_COMMIT from $BRANCH at $(date -Is)"
