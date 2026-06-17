@@ -96,15 +96,31 @@ def _load_env() -> None:
         os.environ.setdefault("LANGSMITH_PROJECT", "video-editing-agent")
         _log("LangSmith tracing enabled")
 
-    azure_key = os.getenv("AZURE_AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+    azure_key = _get_azure_ai_key()
     if azure_key:
         _log("Azure AI key present")
-    if os.getenv("AZURE_AI_ENDPOINT"):
-        _log(f"Azure AI endpoint: {os.getenv('AZURE_AI_ENDPOINT')}")
+    if _get_azure_ai_endpoint():
+        _log(f"Azure AI endpoint: {_get_azure_ai_endpoint()}")
 
 
 def _is_gemini_model(model: str) -> bool:
     return str(model or "").lower().startswith("gemini-")
+
+
+def _get_azure_ai_key() -> str:
+    return (
+        os.getenv("AZURE_AI_API_KEY")
+        or os.getenv("AZURE_PANASTRA_AI_API_KEY")
+        or ""
+    ).strip()
+
+
+def _get_azure_ai_endpoint() -> str:
+    return (
+        os.getenv("AZURE_AI_ENDPOINT")
+        or os.getenv("AZURE_PANASTRA_AI_ENDPOINT")
+        or "https://panastra.services.ai.azure.com/"
+    ).strip().rstrip("/")
 
 
 def _build_chat_model(model: str, temperature: float = 1.0) -> Any:
@@ -115,11 +131,11 @@ def _build_chat_model(model: str, temperature: float = 1.0) -> Any:
             max_retries=2,
         )
 
-    azure_key = os.getenv("AZURE_AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+    azure_key = _get_azure_ai_key()
     if not azure_key:
-        raise RuntimeError("Missing AZURE_AI_API_KEY or AZURE_OPENAI_API_KEY in environment")
+        raise RuntimeError("Missing AZURE_AI_API_KEY or AZURE_PANASTRA_AI_API_KEY in environment")
 
-    endpoint = os.getenv("AZURE_AI_ENDPOINT", "https://panastra.services.ai.azure.com/").rstrip("/")
+    endpoint = _get_azure_ai_endpoint()
     return ChatOpenAI(
         model=model,
         api_key=azure_key,
@@ -759,8 +775,8 @@ def run_agent(
     using_gemini = _is_gemini_model(model)
     if using_gemini and not os.getenv("GOOGLE_API_KEY"):
         raise RuntimeError("Missing GOOGLE_API_KEY in environment")
-    if not using_gemini and not (os.getenv("AZURE_AI_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")):
-        raise RuntimeError("Missing AZURE_AI_API_KEY or AZURE_OPENAI_API_KEY in environment")
+    if not using_gemini and not _get_azure_ai_key():
+        raise RuntimeError("Missing AZURE_AI_API_KEY or AZURE_PANASTRA_AI_API_KEY in environment")
 
     _log(f"Model: {model}")
     _log(f"Project: {project}")
