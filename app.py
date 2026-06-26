@@ -13,7 +13,7 @@ from time import monotonic
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -331,9 +331,19 @@ def index(request: Request) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(request, "index.html", {"request": request})
 
 
+@app.head("/")
+def head_index() -> Response:
+    return Response(status_code=200, media_type="text/html")
+
+
 @app.get("/api/health")
 def health() -> JSONResponse:
     return JSONResponse({"status": "healthy", "limits": _limits_payload()})
+
+
+@app.head("/api/health")
+def head_health() -> Response:
+    return Response(status_code=200, media_type="application/json")
 
 
 @app.get("/api/sessions")
